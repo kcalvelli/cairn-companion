@@ -41,11 +41,11 @@ axios-companion ships in opt-in tiers. You can stop at any tier and still have a
 
 See [ROADMAP.md](./ROADMAP.md) for the full build order and which OpenSpec proposals ship each tier.
 
-## Getting started (once Tier 0 ships)
+## Getting started
 
-> **Not yet functional.** This repo currently contains only OpenSpec proposals. The bootstrap change implements Tier 0. Follow its progress in [openspec/changes/bootstrap/](./openspec/changes/bootstrap/).
+> **Tier 0 is functional.** The `companion` wrapper, the home-manager module, and the default character-free persona all work today. Layering your own character on top is covered in [Authoring a persona](#authoring-a-persona) below. Tier 1+ proposals are still in the OpenSpec queue — see [ROADMAP.md](./ROADMAP.md).
 
-After the bootstrap change lands, adding axios-companion to a NixOS + home-manager system will look like this:
+Adding axios-companion to a NixOS + home-manager system looks like this:
 
 ```nix
 # flake.nix
@@ -72,10 +72,111 @@ After the bootstrap change lands, adding axios-companion to a NixOS + home-manag
 Then, from any terminal:
 
 ```bash
-companion "what do you think of this dumpster fire?"
-companion chat                  # interactive session
+companion                       # interactive session with persona + workspace + mcp pre-loaded
+companion "quick question"      # interactive session, seeded with a first message
+companion -p "one-shot prompt"  # non-interactive, prints response, exits
 companion --resume              # continue the last session
 ```
+
+Everything after the wrapper's own injections is passthrough — any flag Claude Code accepts, `companion` accepts. See [the wrapper contract in the bootstrap spec](./openspec/changes/bootstrap/specs/wrapper/spec.md) for the full list of supported invocation shapes and guarantees.
+
+### First run
+
+The first time you invoke `companion` after enabling the module, the wrapper scaffolds your workspace:
+
+1. **Workspace directory created** at `$XDG_DATA_HOME/axios-companion/workspace` (typically `~/.local/share/axios-companion/workspace`) unless you set `services.axios-companion.workspaceDir` to a different path.
+2. **`README.md` written** into the workspace explaining what the directory is for — long-lived notes, reference material, memory the agent can read across sessions.
+3. **`USER.md` template written** — but only if you have *not* set `services.axios-companion.persona.userFile`. If you supplied your own user file via the module option, the wrapper skips scaffolding the template because your file is already the source of truth. If you didn't, the template lands with placeholder sections (`<your name>`, `<your role>`, etc.) that you fill in to give the agent context.
+4. **Claude launches** with the composed persona as its system prompt, the workspace attached via `--add-dir`, and — if detected — your mcp-gateway config loaded.
+
+Subsequent invocations skip scaffolding entirely and do not touch anything in the workspace. You can edit `USER.md`, add new files, delete things, or rearrange the directory freely between runs — the wrapper treats the workspace as yours after that first invocation.
+
+### MCP tool integration
+
+The wrapper auto-detects an mcp-gateway configuration at runtime and passes it to Claude Code as `--mcp-config=<path>`, making every tool your gateway exposes available in the session. Detection is purely file-existence-based; the wrapper checks these paths in order and uses the first one it finds:
+
+1. `$XDG_CONFIG_HOME/mcp-gateway/claude_config.json`
+2. `$XDG_CONFIG_HOME/mcp/mcp_servers.json`
+3. `$HOME/.mcp.json`
+
+If none exist, the wrapper invokes Claude Code without `--mcp-config` and produces no warning — MCP tools are optional, not required. If you keep your mcp-gateway config somewhere else, set `services.axios-companion.mcpConfigFile` to the absolute path and the wrapper will use it exclusively, bypassing auto-detection.
+
+## Authoring a persona
+
+axios-companion is intentionally **Nix-declarative on the outside and rich-markdown on the inside**. You declare *which* files make up your persona in your home-manager config; the files themselves are plain markdown that you author and edit by hand. Nix is poor at holding paragraphs of character voice as attribute sets; markdown is poor at being reproducibly wired into a system configuration. This split lets each do what it's good at.
+
+### The recommended five-file layout
+
+Nothing in the module enforces a specific file structure — the wrapper concatenates whatever files you list. But after porting a production persona to this module we converged on a five-file layout that separates concerns cleanly and keeps each file short enough to reason about. Start here:
+
+```
+personas/<name>/
+├── USER.md       # Facts about the user and household — names, roles,
+│                 # machines, safeguards. No voice guidance.
+├── voice.md      # How the agent talks — tone rules, signature phrases,
+│                 # "what you never do," the aesthetic target.
+├── beliefs.md    # The agent's worldview — cultural era, tech opinions,
+│                 # the interior lens. Not rules; texture.
+├── family.md     # Per-person interaction guide — one section per
+│                 # person the agent interacts with. Skip this file
+│                 # entirely if only one person uses the agent.
+└── context.md    # Operating rules the user has taught the agent —
+                  # technical preferences, writing-with-personality
+                  # rules, discipline around specific failure modes.
+```
+
+### What goes in each file
+
+**`USER.md`** — strictly factual. Who the user is, who else is in the household (if multiple people interact with the agent), what machines exist, what to check before destructive actions. No voice guidance lives here. When the agent needs to answer *"who am I talking to?"*, this is where it reads.
+
+**`voice.md`** — the load-bearing persona file. Tone register, how sentences are shaped, what the agent never says, the one-line aesthetic target. A single concrete cultural reference does more work than paragraphs of tone adjectives — *"Randal from Clerks, not burnt-out help desk guy"* is clearer than fifteen bullets about sarcasm and brevity. This is the file that makes the agent sound like a specific character rather than a generic assistant.
+
+**`beliefs.md`** — worldview backdrop. What the agent remembers culturally, what the agent finds ridiculous, what the agent believes about the present. Written as context, not instructions — *"it's the water you swim in, not a costume."* The agent does not recite this file; it thinks through it.
+
+**`family.md`** — per-person handling for users beyond the primary. Each person gets a section with their quirks, running bits, and the specific tone adjustments that make them feel known rather than flattened into a generic "other user." Skip this file entirely if only one person uses your agent.
+
+**`context.md`** — the lessons-learned file. Things the user has explicitly taught the agent through experience: technical preferences, writing style for code artifacts, and discipline around specific failure modes ("don't retry crashed tools," "don't fake broken," "check before guessing"). Specific failure modes make better instructions than abstract principles — a rule that starts *"when you claimed email was dead and the logs showed continuous activity…"* is more actionable than "be thorough."
+
+### Wiring it into your config
+
+Drop the files wherever you keep your home-manager config — typically `~/.config/your-nix-config/personas/<name>/` — then reference them from `services.axios-companion.persona`:
+
+```nix
+services.axios-companion = {
+  enable = true;
+  persona = {
+    userFile   = ../personas/sid/USER.md;
+    extraFiles = [
+      ../personas/sid/voice.md
+      ../personas/sid/beliefs.md
+      ../personas/sid/family.md
+      ../personas/sid/context.md
+    ];
+  };
+};
+```
+
+Paths are relative to the `.nix` file doing the referencing, and Nix copies them into the store at build time — so each rebuild pins the exact persona content, and edits to the markdown files only take effect after `nixos-rebuild switch` (or `home-manager switch`). That's the declarative trade-off.
+
+> **Gotcha — `git add` new persona files before rebuilding.** Nix flakes determine what's in the source by asking git via `git ls-files`, which means **untracked files are invisible** to the flake build even when they exist on disk. The first time you create a new `personas/` directory, run `git add personas/` in your config repo before rebuilding, or nix will copy your modified `.nix` files into the store and leave the fresh markdown files behind. When this happens, `companion` launches with warnings like *"persona file not found: /nix/store/XXX-source/personas/sid/USER.md"* and the agent speaks in a generic voice because only the shipped character-free base loaded. Committing the files is not required — `git add` alone makes the index visible to flakes, which is enough.
+
+### Order matters
+
+The wrapper assembles the agent's system prompt in this specific order:
+
+1. The shipped character-free base `AGENT.md` — format rules only (*"be concise," "cite files with path:line," "lead with the answer not the preamble"*). Always loaded. You cannot opt out of this without replacing `persona.basePackage` entirely.
+2. `persona.userFile` — your `USER.md`, replacing the default template.
+3. Each file in `persona.extraFiles`, in list order.
+
+Files earlier in the composition set context that later files build on. We recommend putting **`voice.md` first in `extraFiles`** because it locks the speech register immediately after the factual user context, so every subsequent file is read "in character" by the model. `beliefs.md`, `family.md`, and `context.md` can then extend or specialize without needing to re-establish tone.
+
+### Multiple personas
+
+If you want different personas for different machines, different roles, or different moods, put each in its own subdirectory (`personas/sid/`, `personas/work/`, `personas/public/`) and wire each host's `hosts/<hostname>.nix` to reference the set it wants. Nothing in the module prevents this — the files are just paths, and each host can point at whichever set is active there.
+
+### Keeping the default
+
+If you enable `services.axios-companion` without setting `persona.userFile` or `persona.extraFiles`, you get a fully working agent with only the character-free default: response-format rules, citation conventions, and a placeholder `USER.md` template scaffolded into your workspace on first run for you to fill in. That's a perfectly valid deployment — the five-file layout is a recommended starting point for users who want a distinct character voice, not a requirement.
 
 ## Repository layout
 

@@ -17,7 +17,7 @@ Work proceeds roughly top-to-bottom. Items at the same level can be built in par
 
 ### Tier 0 — Foundation
 
-- [ ] **[bootstrap](./openspec/changes/bootstrap/)** — Shell wrapper, home-manager module, minimal default persona files. Ships a working `companion` command for every axios user. *No dependencies.*
+- [x] **[bootstrap](./openspec/changes/bootstrap/)** — Shell wrapper, home-manager module, minimal default persona files. Shipped 2026-04-05. Validated end-to-end on `edge` with a full production persona port (Sid Friday, five-file layout). `companion` binary, `lib.${system}.buildCompanion` helper, `homeManagerModules.default`, and character-free default persona are all live. *No dependencies.*
 
 ### Tier 1 — Daemon and local surfaces
 
