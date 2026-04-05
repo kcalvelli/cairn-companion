@@ -18,6 +18,34 @@ The `companion` binary MUST be implemented as a `pkgs.writeShellApplication`, no
 - **And**: The script is less than 200 lines
 - **And**: The script's logic is obvious from reading it
 
+### Requirement: Persona Paths Are Resolved At Build Time
+
+The wrapper MUST have persona file paths resolved at Nix evaluation time and embedded as literal `/nix/store/...` paths in the generated shell script. The wrapper MUST NOT scan directories, consult environment variables, or otherwise discover persona files at runtime. This keeps the script transparent (reading it reveals exactly which files will be loaded) and guarantees reproducibility.
+
+The same build-time resolution applies to:
+
+- The default `AGENT.md` path from `persona.basePackage`
+- The default `USER.md` template path from `persona.basePackage`
+- The user-provided `persona.userFile` path (when set)
+- Each path in `persona.extraFiles`
+
+The wrapper also bakes a `HAS_USER_FILE` shell variable (`0` or `1`) into the script at build time, recording whether `persona.userFile` was set. This variable is the single source of truth for first-run scaffolding decisions.
+
+#### Scenario: Inspecting the generated script
+
+- **Given**: A user has built the companion wrapper with default options
+- **When**: The user runs `cat $(which companion)`
+- **Then**: The script contains literal `/nix/store/...-persona-default/AGENT.md` and `/nix/store/...-persona-default/USER.md` paths
+- **And**: The script contains a line like `HAS_USER_FILE=0`
+- **And**: No environment-variable lookups or directory scans are used to locate persona files
+
+#### Scenario: User file is wired at build time
+
+- **Given**: `services.axios-companion.persona.userFile = ./my-context.md`
+- **When**: The module builds the wrapper via the flake's `buildCompanion` helper
+- **Then**: The generated script contains the literal store path of `./my-context.md`
+- **And**: The generated script contains `HAS_USER_FILE=1`
+
 ### Requirement: Persona Resolution Order
 
 The wrapper MUST assemble the system prompt from persona files in the following order, concatenated with blank-line separators:
@@ -52,6 +80,8 @@ Later files in the order MAY add to, override, or contradict earlier files. The 
 
 The wrapper MUST ensure the workspace directory exists before invoking Claude. If the directory does not exist, the wrapper creates it along with a `README.md` explaining its purpose, and copies the default `USER.md` template into it if the user has not provided a user file via module options.
 
+The decision of whether to copy the template MUST be made by reading the `HAS_USER_FILE` shell variable baked into the script at build time (see "Persona Paths Are Resolved At Build Time"). The wrapper MUST NOT inspect the filesystem or consult environment variables to make this decision.
+
 #### Scenario: First-ever invocation on a fresh system
 
 - **Given**: `services.axios-companion.workspaceDir = "$XDG_DATA_HOME/axios-companion/workspace"` (default)
@@ -61,6 +91,20 @@ The wrapper MUST ensure the workspace directory exists before invoking Claude. I
 - **And**: A `README.md` is written explaining what the workspace is for
 - **And**: A `USER.md` copy of the default template is written (only if `persona.userFile` is null)
 - **And**: Claude is then invoked as normal
+
+#### Scenario: First-run scaffolding uses the baked HAS_USER_FILE flag
+
+- **Given**: The module was evaluated with `persona.userFile = null`
+- **When**: The wrapper is built via `buildCompanion`
+- **Then**: The generated script contains `HAS_USER_FILE=0`
+- **And**: When the wrapper runs for the first time against an empty workspace, the default `USER.md` template is copied into the workspace
+
+#### Scenario: User-provided file suppresses template copy
+
+- **Given**: The module was evaluated with `persona.userFile = ./my-context.md`
+- **When**: The wrapper is built via `buildCompanion`
+- **Then**: The generated script contains `HAS_USER_FILE=1`
+- **And**: When the wrapper runs for the first time against an empty workspace, no `USER.md` template is copied (the user's own file is referenced only as a system-prompt input, not scaffolded into the workspace)
 
 #### Scenario: Workspace already exists
 

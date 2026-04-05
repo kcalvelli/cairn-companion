@@ -119,6 +119,37 @@ The `mcpConfigFile` option MUST default to `null`, which triggers the wrapper's 
 - **When**: The wrapper runs
 - **Then**: It uses `/etc/custom-mcp.json` without auto-detection
 
+### Requirement: Module Builds The Wrapper Via `lib.buildCompanion`
+
+The module MUST NOT consume `inputs.axios-companion.packages.${system}.default` directly for the user-facing wrapper. That package is a reference build with default arguments, useful for `nix build`, smoke testing, and documentation. Real per-user builds — which need the caller's `claudePackage`, `persona.userFile`, `persona.extraFiles`, `workspaceDir`, and `persona.basePackage` wired in — MUST go through a flake-exposed helper:
+
+```nix
+inputs.axios-companion.lib.${pkgs.system}.buildCompanion {
+  claudePackage      = cfg.claudePackage;
+  personaBasePackage = cfg.persona.basePackage;
+  userFile           = cfg.persona.userFile;       # null or path
+  extraFiles         = cfg.persona.extraFiles;     # list of paths
+  defaultWorkspace   = cfg.workspaceDir;
+}
+```
+
+Using a named helper function (rather than `package.override`) makes the public contract explicit: the arguments above are what the module supplies, and the helper's signature documents them. The flake MUST expose `lib.${system}.buildCompanion` as an output, alongside `packages.${system}.default` (the reference build using this helper's defaults).
+
+#### Scenario: Module calls buildCompanion with user options
+
+- **Given**: A home-manager configuration sets `services.axios-companion.enable = true` with a custom `persona.userFile` and a non-default `workspaceDir`
+- **When**: The module evaluates its `config` block
+- **Then**: The module calls `inputs.axios-companion.lib.${pkgs.system}.buildCompanion` with those values passed as named arguments
+- **And**: The resulting package is added to `home.packages`
+- **And**: The module does NOT reference `inputs.axios-companion.packages.${pkgs.system}.default`
+
+#### Scenario: Reference build remains available
+
+- **Given**: A user runs `nix build github:kcalvelli/axios-companion`
+- **When**: The build completes
+- **Then**: `result/bin/companion` is the reference wrapper built with `buildCompanion`'s defaults (default persona, `pkgs.claude-code`, default workspace path)
+- **And**: This reference build is suitable for smoke-testing the flake without a home-manager configuration
+
 ### Requirement: Module Adds Companion To `home.packages`
 
 When enabled, the module MUST add the resolved `package` (with `claudePackage` and persona files wired in) to `home.packages` so that the `companion` binary is available on the user's PATH after `home-manager switch`.
