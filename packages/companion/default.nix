@@ -145,8 +145,14 @@ writeShellApplication {
       --append-system-prompt "$PERSONA"
       --add-dir "$WORKSPACE"
     )
+    # Use the --flag=value form for --mcp-config. Claude Code's argparse
+    # treats --mcp-config as nargs='+' (accepts multiple space-separated
+    # paths), which means a bare `--mcp-config /path Hello` gets parsed as
+    # TWO MCP config files — the real path and the user's positional
+    # prompt. The equals form binds exactly one value and prevents the
+    # positional from being consumed.
     if [ -n "$MCP_CONFIG" ]; then
-      args+=(--mcp-config "$MCP_CONFIG")
+      args+=("--mcp-config=$MCP_CONFIG")
     fi
 
     exec claude "''${args[@]}" "$@"

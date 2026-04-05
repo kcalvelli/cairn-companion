@@ -113,6 +113,16 @@ The decision of whether to copy the template MUST be made by reading the `HAS_US
 - **Then**: The wrapper does NOT modify or overwrite any existing files in the workspace
 - **And**: Claude is invoked normally
 
+### Requirement: MCP Config Flag Uses Equals Form
+
+When the wrapper passes `--mcp-config` to `claude`, it MUST use the `--mcp-config=<path>` (equals) form rather than the space-separated `--mcp-config <path>` form. Claude Code's argument parser treats `--mcp-config` as accepting one or more space-separated paths (argparse `nargs='+'`), which means a bare `--mcp-config /path <positional>` invocation causes the user's positional prompt to be consumed as a second MCP config file. The equals form binds to exactly one value and prevents this.
+
+#### Scenario: Wrapper constructs the mcp-config flag
+
+- **Given**: Auto-detection or an explicit `mcpConfigFile` resolves to `/home/user/.config/mcp/mcp_servers.json`
+- **When**: The wrapper assembles the `claude` invocation
+- **Then**: The flag appears as `--mcp-config=/home/user/.config/mcp/mcp_servers.json` (single argv entry), not as two separate `--mcp-config` and `/home/user/.config/mcp/mcp_servers.json` argv entries
+
 ### Requirement: MCP Config Auto-Detection
 
 The wrapper MUST check the following paths in order when `mcpConfigFile` is null (the default), and use the first one that exists:
@@ -149,11 +159,13 @@ If none exist, the wrapper MUST invoke Claude without `--mcp-config`. The wrappe
 
 Arguments that the wrapper does not consume MUST be passed through to the underlying `claude` invocation verbatim. The wrapper MUST NOT intercept or rewrite Claude Code flags.
 
-#### Scenario: User passes a one-shot prompt
+#### Scenario: User passes a positional prompt
 
 - **Given**: The user runs `companion "what is the capital of Montana"`
 - **When**: The wrapper invokes `claude`
-- **Then**: The command is effectively `claude --append-system-prompt "<persona>" --add-dir "<workspace>" [--mcp-config <path>] -p "what is the capital of Montana"`
+- **Then**: The positional argument is passed through to `claude` verbatim alongside the wrapper's own flags (`--append-system-prompt`, `--add-dir`, and optionally `--mcp-config=<path>`)
+- **And**: The wrapper does NOT inject `-p`, `--print`, or any other flag to force one-shot mode; whether the invocation is interactive or non-interactive is governed by `claude`'s own handling of positional arguments
+- **And**: If the user wants one-shot (print-and-exit) behavior, they pass `-p` themselves: `companion -p "what is the capital of Montana"`
 
 #### Scenario: User passes Claude Code flags
 
@@ -167,6 +179,61 @@ Arguments that the wrapper does not consume MUST be passed through to the underl
 - **Given**: The user runs `companion` with no arguments
 - **When**: The wrapper invokes `claude`
 - **Then**: `claude` is started in interactive mode with persona/workspace/mcp pre-loaded
+
+### Requirement: Programmatic Invocation Contract
+
+The wrapper is the primitive that higher tiers (daemon-core, channel adapters, openai-gateway) invoke to run Claude Code with the Tier 0 environment pre-wired. Those consumers need a stable, documented set of invocation shapes they can build on without reverse-engineering the wrapper. This requirement locks that contract in.
+
+The wrapper MUST support the following invocation shapes, and each MUST behave as described. Any deviation is a bug in the wrapper, not in the caller.
+
+1. **Interactive, no seed prompt.** `companion` with no arguments starts `claude` in its interactive TUI with persona/workspace/mcp pre-loaded. Used by humans at terminals and by daemon-core for debugging sessions.
+
+2. **One-shot, print-and-exit.** `companion -p "prompt"` passes `-p "prompt"` through to `claude`, which runs the turn non-interactively and writes the response to stdout. Used by channel adapters (Telegram, Discord, XMPP, email) and by openai-gateway for batch responses.
+
+3. **Resumed turn.** `companion --resume <session-id> -p "next turn"` passes both flags through to `claude`, which resumes the specified session and runs the next turn. Used by channel adapters maintaining multi-turn conversations against a per-user session ID.
+
+4. **Streaming output.** `companion -p "prompt" --output-format stream-json` passes all flags through to `claude`, which streams JSON events to stdout as they are produced. Used by openai-gateway to service Home Assistant Conversation's streaming expectations over `/v1/chat/completions`.
+
+5. **Model selection.** `companion -p "prompt" --model <model-name>` passes the `--model` flag through. Used by openai-gateway to map the OpenAI `model` request field onto the corresponding Claude model.
+
+6. **Arbitrary combinations of the above.** The wrapper MUST NOT impose ordering constraints beyond what `claude` itself requires.
+
+The wrapper's only injections into the final `claude` invocation are:
+
+- `--append-system-prompt "<composed persona string>"`
+- `--add-dir "<workspace path>"`
+- `--mcp-config=<path>` (equals form, only when a config file was resolved)
+
+Every other argv element comes from the caller and passes through verbatim. The wrapper MUST NOT add, remove, reorder, or rewrite caller-supplied arguments. In particular, the wrapper MUST NOT infer `-p` from the presence of a positional argument, MUST NOT strip flags it doesn't recognize, and MUST NOT substitute default values for flags the caller omitted.
+
+#### Scenario: Daemon runs a one-shot turn programmatically
+
+- **Given**: A Tier 1 daemon (e.g., channel-telegram) has received a user message
+- **When**: The daemon executes `companion -p "user message text"` and captures stdout
+- **Then**: The wrapper exec's `claude --append-system-prompt "..." --add-dir "..." --mcp-config=... -p "user message text"`
+- **And**: Stdout contains only `claude`'s response output, with no wrapper-added content
+- **And**: The wrapper's exit code equals `claude`'s exit code (see "Exit Code Transparency")
+
+#### Scenario: Daemon resumes a session for a follow-up turn
+
+- **Given**: A channel adapter is continuing an existing conversation with a stored session ID `abc-123`
+- **When**: The daemon executes `companion --resume abc-123 -p "follow-up message"`
+- **Then**: The wrapper passes both `--resume abc-123` and `-p "follow-up message"` through to `claude` alongside its own three injections
+- **And**: `claude` resumes session `abc-123` and produces the next turn
+
+#### Scenario: Gateway streams tokens for Home Assistant
+
+- **Given**: openai-gateway received a `/v1/chat/completions` request with `stream: true`
+- **When**: The gateway executes `companion -p "user prompt" --output-format stream-json --model claude-haiku-4-5`
+- **Then**: The wrapper passes all three passthrough flags through to `claude`
+- **And**: The gateway can read stream-json events from stdout as `claude` produces them, map them onto OpenAI SSE format, and forward to Home Assistant
+
+#### Scenario: Caller passes an unrecognized future Claude Code flag
+
+- **Given**: A future version of `claude` introduces a new flag `--foo bar` that this wrapper was not written to know about
+- **When**: A caller runs `companion --foo bar -p "prompt"`
+- **Then**: The wrapper passes `--foo bar -p "prompt"` through to `claude` verbatim without inspecting, validating, or rejecting the new flag
+- **And**: Whether `claude` accepts or rejects the new flag is entirely `claude`'s concern
 
 ### Requirement: Exit Code Transparency
 
