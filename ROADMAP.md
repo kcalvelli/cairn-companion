@@ -7,7 +7,7 @@ This document is the master index. See individual `proposal.md` files for detail
 ## Tiering philosophy
 
 - **Tier 0** is the minimum viable product — a persona'd shell wrapper around Claude Code. Every axios user gets this on day one.
-- **Tier 1** adds a persistent user-level daemon that unlocks channel adapters (Telegram/Discord/email/XMPP), a proper CLI, and a TUI dashboard. Users who want a "Sid is always there" experience on one machine stop here.
+- **Tier 1** adds a persistent user-level daemon that unlocks channel adapters (Telegram/Discord/email/XMPP), an OpenAI-compatible HTTP gateway for voice and other non-interactive consumers (Home Assistant, etc.), a proper CLI, and a TUI dashboard. Users who want a "Sid is always there" experience on one machine stop here.
 - **Tier 2** adds distributed agency — one companion identity that can act on whichever machine the user is currently using, via mcp-gateway over Tailscale. Users with multiple NixOS machines unlock this.
 - **Optional** polish layers come after Tier 2 — GUI clients, desktop shell integrations, advanced tooling. Never required.
 
@@ -22,6 +22,7 @@ Work proceeds roughly top-to-bottom. Items at the same level can be built in par
 ### Tier 1 — Daemon and local surfaces
 
 - [ ] **[daemon-core](./openspec/changes/daemon-core/)** — User-level systemd daemon, D-Bus interface, session store. The foundation for every Tier 1+ feature. *Depends on: bootstrap*
+- [ ] **[openai-gateway](./openspec/changes/openai-gateway/)** ⚠️ **REQUIRED FOR ZEROCLAW DECOMMISSION** — OpenAI-compatible `/v1/chat/completions` HTTP endpoint inside the daemon. Used by Home Assistant's Conversation integration as Sid's voice backend across every room. Missing this breaks voice during migration. *Depends on: bootstrap, daemon-core*
 - [ ] **[cli-client](./openspec/changes/cli-client/)** — Rust CLI with subcommands, replacing the Tier 0 shell wrapper (while keeping backward compatibility). *Depends on: bootstrap, daemon-core*
 - [ ] **[tui-dashboard](./openspec/changes/tui-dashboard/)** — Terminal-native dashboard built on ratatui. *Depends on: bootstrap, daemon-core*
 - [ ] **[channel-telegram](./openspec/changes/channel-telegram/)** — First channel adapter; establishes the pattern for subsequent adapters. *Depends on: bootstrap, daemon-core*
@@ -29,7 +30,7 @@ Work proceeds roughly top-to-bottom. Items at the same level can be built in par
 - [ ] **[channel-discord](./openspec/changes/channel-discord/)** — Discord bot adapter. *Depends on: bootstrap, daemon-core, channel-telegram (pattern reference)*
 - [ ] **[channel-xmpp](./openspec/changes/channel-xmpp/)** — XMPP adapter for self-hosted servers. *Depends on: bootstrap, daemon-core, channel-telegram (pattern reference)*
 
-Tier 1 channel adapters after the first can be built in any order. The pattern is identical.
+**Tier 1 priority ordering:** `daemon-core` first (foundation), then `openai-gateway` immediately — it restores voice interaction that Sid users depend on today via HA Conversation, and its absence during migration would mean every voice satellite in the house stops working. `cli-client`, `tui-dashboard`, and `channel-telegram` can proceed in parallel after that. Remaining channels (`channel-email`, `channel-discord`, `channel-xmpp`) are new capabilities (not replacements) and can be scheduled based on desire, not urgency.
 
 ### Tier 2 — Distributed agency
 
@@ -69,7 +70,7 @@ Every proposal must honor these rules:
 ## Estimated total scope
 
 - **Tier 0 alone**: ~200 lines of Nix + shell + two markdown files. Shippable in a single sitting.
-- **Tier 1 complete**: ~3,000 LoC Rust + ~300 lines of Nix. Multiple proposals, weeks of work if pursued sequentially.
+- **Tier 1 complete**: ~3,500 LoC Rust + ~350 lines of Nix. Multiple proposals, weeks of work if pursued sequentially. (Increased from original estimate to account for the `openai-gateway` HTTP server component.)
 - **Tier 2 complete**: +1,500 LoC Rust (mostly tool servers and hub routing) + ~200 lines of Nix.
 - **Optional GUI**: +1,500 LoC Rust for a solid libadwaita app.
 
