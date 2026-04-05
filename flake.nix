@@ -13,17 +13,84 @@
         "aarch64-linux"
       ];
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
+
+      # claude-code is marked unfree in nixpkgs. Import a per-system pkgs
+      # with a narrow predicate allowing just that package, so the
+      # reference build can be produced with `nix build .#default`.
+      # Consumers of `lib.<system>.buildCompanion` are free to pass any
+      # claudePackage they like and are not bound by this predicate.
+      pkgsFor =
+        system:
+        import nixpkgs {
+          inherit system;
+          config.allowUnfreePredicate =
+            pkg: builtins.elem (nixpkgs.lib.getName pkg) [ "claude-code" ];
+        };
     in
     {
-      # Overlay - will be populated once the bootstrap change adds a package
-      # See openspec/changes/bootstrap/
-      overlays.default = final: prev: { };
+      # Overlay — exposes only the reference `axios-companion` wrapper build.
+      # The default-persona package is implementation detail and deliberately
+      # not promoted to overlay status.
+      overlays.default = final: prev: {
+        axios-companion = self.packages.${final.system}.default;
+      };
 
-      # Home-Manager Module - will be populated by the bootstrap change
-      # See openspec/changes/bootstrap/specs/home-manager/spec.md
+      # Home-Manager Module — will be populated by Phase 4 of the bootstrap change.
+      # See openspec/changes/bootstrap/specs/home-manager/spec.md.
       homeManagerModules.default = _: { };
 
-      # Dev shell - available now for working on openspec proposals
+      # Packages.
+      #
+      #   .default         — the reference companion build, using
+      #                      `buildCompanion` with default arguments. Suitable
+      #                      for `nix build` smoke testing and documentation.
+      #                      NOT the user-facing build path — real per-user
+      #                      builds go through the home-manager module, which
+      #                      calls `lib.<system>.buildCompanion` directly.
+      #
+      #   .personaDefault  — the character-free default persona package.
+      #                      Exposed by name for advanced users who want to
+      #                      reference it explicitly. Not included in the
+      #                      overlay.
+      packages = forAllSystems (
+        system:
+        let
+          pkgs = pkgsFor system;
+          personaDefault = pkgs.callPackage ./packages/persona-default { };
+          referenceCompanion = self.lib.${system}.buildCompanion {
+            claudePackage = pkgs.claude-code;
+            personaBasePackage = personaDefault;
+            defaultWorkspace = "__HOME__/.local/share/axios-companion/workspace";
+          };
+        in
+        {
+          default = referenceCompanion;
+          personaDefault = personaDefault;
+        }
+      );
+
+      # Flake-exposed build helper. This is the public contract the
+      # home-manager module consumes — see specs/home-manager/spec.md
+      # "Module Builds The Wrapper Via `lib.buildCompanion`".
+      #
+      # Accepted arguments:
+      #   claudePackage       — the claude-code package to invoke
+      #   personaBasePackage  — package containing AGENT.md and USER.md
+      #   defaultWorkspace    — string path baked into the wrapper
+      #   userFile            — nullable path; overrides base USER.md
+      #   extraFiles          — list of additional persona files, appended
+      #   mcpConfigFile       — nullable path; overrides MCP auto-detection
+      lib = forAllSystems (
+        system:
+        let
+          pkgs = pkgsFor system;
+        in
+        {
+          buildCompanion = args: pkgs.callPackage ./packages/companion args;
+        }
+      );
+
+      # Dev shell.
       devShells = forAllSystems (
         system:
         let

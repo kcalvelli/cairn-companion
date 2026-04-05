@@ -10,37 +10,37 @@
 
 ## Phase 2: Nix package for the companion wrapper
 
-- [ ] **2.1** Create `packages/companion/default.nix` — a `pkgs.writeShellApplication` factory that:
-  - Accepts `claudePackage`, `personaBasePackage`, `userFile` (nullable), `extraFiles` (list), and `defaultWorkspace` as arguments
+- [x] **2.1** Create `packages/companion/default.nix` — a `pkgs.writeShellApplication` factory that:
+  - Accepts `claudePackage`, `personaBasePackage`, `userFile` (nullable), `extraFiles` (list), `defaultWorkspace`, and `mcpConfigFile` (nullable) as arguments
   - Bakes all resolved persona paths into the generated script as literal `/nix/store/...` paths (no runtime directory scans, no env-var lookups)
   - Bakes `HAS_USER_FILE=0` or `HAS_USER_FILE=1` into the script based on whether `userFile` was supplied
   - Builds a `companion` shell script with logic per `specs/wrapper/spec.md`
   - Runtime dependencies: `coreutils` only (file existence checks use `[ -f ]`; no JSON parsing in the wrapper)
-- [ ] **2.2** Write the wrapper shell script logic:
-  - [ ] Parse arguments (separate companion-specific from passthrough)
-  - [ ] Concatenate the build-time-baked persona file paths into a single system prompt string (order: base AGENT → base USER *or* user file → extras)
-  - [ ] Ensure workspace directory exists; on first run, write `README.md` and — only if `HAS_USER_FILE=0` — copy the default `USER.md` template
-  - [ ] Auto-detect mcp-gateway config at documented paths using plain file-existence checks
-  - [ ] Build the final `claude` invocation with all flags
-  - [ ] `exec` to `claude` so the exit code propagates transparently
-- [ ] **2.3** Expose `lib.${system}.buildCompanion` as a flake output — this is the named helper the home-manager module consumes. It accepts the arguments from 2.1 and returns the built wrapper package.
-- [ ] **2.4** Wire `packages.${system}.default` in `flake.nix` to be the reference build produced by `buildCompanion` with default arguments (default persona, `pkgs.claude-code`, default workspace). This is for `nix build` smoke testing and documentation, not the user-facing build path.
-- [ ] **2.5** Wire `overlays.default` in `flake.nix` to expose only `axios-companion` (the reference wrapper build). Do NOT expose the default-persona package via the overlay — it is an implementation detail.
-- [ ] **2.6** Verify `nix build .#default` produces a working binary and `nix eval .#lib.${system}.buildCompanion` resolves to a function.
+- [x] **2.2** Write the wrapper shell script logic:
+  - [x] Parse arguments (separate companion-specific from passthrough)
+  - [x] Concatenate the build-time-baked persona file paths into a single system prompt string (order: base AGENT → base USER *or* user file → extras)
+  - [x] Ensure workspace directory exists; on first run, write `README.md` and — only if `HAS_USER_FILE=0` — copy the default `USER.md` template
+  - [x] Auto-detect mcp-gateway config at documented paths using plain file-existence checks
+  - [x] Build the final `claude` invocation with all flags
+  - [x] `exec` to `claude` so the exit code propagates transparently
+- [x] **2.3** Expose `lib.${system}.buildCompanion` as a flake output — this is the named helper the home-manager module consumes. It accepts the arguments from 2.1 and returns the built wrapper package.
+- [x] **2.4** Wire `packages.${system}.default` in `flake.nix` to be the reference build produced by `buildCompanion` with default arguments (default persona, `pkgs.claude-code`, default workspace). This is for `nix build` smoke testing and documentation, not the user-facing build path.
+- [x] **2.5** Wire `overlays.default` in `flake.nix` to expose only `axios-companion` (the reference wrapper build). Do NOT expose the default-persona package via the overlay — it is an implementation detail.
+- [x] **2.6** Verify `nix build .#default` produces a working binary and `nix eval .#lib.${system}.buildCompanion` resolves to a function.
 
 ## Phase 3: Default persona files
 
-- [ ] **3.1** Create `persona/default/AGENT.md` per `specs/persona/spec.md`:
+- [x] **3.1** Create `persona/default/AGENT.md` per `specs/persona/spec.md`:
   - Response format rules only
   - Under 50 lines
   - Zero character voice, tone adjectives, or nostalgia framing
   - Explicit instruction to read `USER.md` for user context
-- [ ] **3.2** Create `persona/default/USER.md` template per `specs/persona/spec.md`:
+- [x] **3.2** Create `persona/default/USER.md` template per `specs/persona/spec.md`:
   - Header comment explaining purpose and how to customize
   - Placeholder sections: Who I am, Machines, Communication preferences, Things to check, Projects
   - All values are obvious placeholders (`<your name>`, etc.)
-- [ ] **3.3** Create `packages/persona-default/default.nix` — a package that installs both files into a derivation referenced by `persona.basePackage`
-- [ ] **3.4** Ensure the default persona package path is importable at Nix eval time so the module can reference individual files
+- [x] **3.3** Create `packages/persona-default/default.nix` — a package that installs both files into a derivation referenced by `persona.basePackage`
+- [x] **3.4** Ensure the default persona package path is importable at Nix eval time so the module can reference individual files
 
 ## Phase 4: Home-manager module
 
@@ -55,7 +55,7 @@
   - [ ] `mcpConfigFile` — nullable path
 - [ ] **4.2** Implement the `config` block:
   - [ ] Guard everything behind `lib.mkIf cfg.enable`
-  - [ ] Build the wrapper by calling `inputs.axios-companion.lib.${pkgs.system}.buildCompanion` (the flake-exposed helper from Phase 2 task 2.3) with `claudePackage`, `personaBasePackage`, `userFile`, `extraFiles`, and `defaultWorkspace` taken from `cfg`
+  - [ ] Build the wrapper by calling `inputs.axios-companion.lib.${pkgs.system}.buildCompanion` (the flake-exposed helper from Phase 2 task 2.3) with `claudePackage`, `personaBasePackage`, `userFile`, `extraFiles`, `defaultWorkspace`, and `mcpConfigFile` taken from `cfg`
   - [ ] Do NOT consume `inputs.axios-companion.packages.${pkgs.system}.default` directly — that is the reference build, not the per-user build path
   - [ ] Add the resulting package to `home.packages`
 - [ ] **4.3** Wire `homeManagerModules.default` in `flake.nix` to point at `./modules/home-manager`

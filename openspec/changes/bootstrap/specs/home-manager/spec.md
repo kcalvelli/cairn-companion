@@ -130,8 +130,11 @@ inputs.axios-companion.lib.${pkgs.system}.buildCompanion {
   userFile           = cfg.persona.userFile;       # null or path
   extraFiles         = cfg.persona.extraFiles;     # list of paths
   defaultWorkspace   = cfg.workspaceDir;
+  mcpConfigFile      = cfg.mcpConfigFile;          # null or path
 }
 ```
+
+`buildCompanion` also accepts a `mcpConfigFile` argument (nullable path) that, when set, is baked into the generated script and bypasses runtime auto-detection.
 
 Using a named helper function (rather than `package.override`) makes the public contract explicit: the arguments above are what the module supplies, and the helper's signature documents them. The flake MUST expose `lib.${system}.buildCompanion` as an output, alongside `packages.${system}.default` (the reference build using this helper's defaults).
 
