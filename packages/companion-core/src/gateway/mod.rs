@@ -18,7 +18,7 @@ use axum::Router;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::dispatcher::{Dispatcher, TurnEvent, TurnRequest};
 use types::*;
@@ -140,14 +140,25 @@ async fn chat_completions(
     // Resolve conversation ID per session policy.
     let conversation_id = resolve_conversation_id(&state.config, &headers);
 
+    let streaming = req.stream.unwrap_or(false);
+    let request_id = format!("chatcmpl-{}", uuid::Uuid::new_v4());
+
+    info!(
+        request_id = %request_id,
+        conversation_id = %conversation_id,
+        streaming = streaming,
+        system_messages = system_context.len(),
+        message_len = message_text.len(),
+        "gateway request"
+    );
+    debug!(message_text = %message_text, "full message to dispatcher");
+
     let turn_req = TurnRequest {
         surface_id: "openai".into(),
         conversation_id,
         message_text,
     };
 
-    let streaming = req.stream.unwrap_or(false);
-    let request_id = format!("chatcmpl-{}", uuid::Uuid::new_v4());
     let created = state.start_time;
     let model = state.config.model_name.clone();
 
@@ -195,12 +206,15 @@ async fn handle_non_streaming(
     }
 
     if had_error {
+        info!(request_id = %request_id, error = %error_detail, "gateway response: error");
         return error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             OpenAIErrorEnvelope::companion_error(error_detail),
         );
     }
 
+    info!(request_id = %request_id, response_len = full_text.len(), "gateway response: complete");
+    debug!(request_id = %request_id, response = %full_text, "full response text");
     let completion = ChatCompletion::new(request_id, model, full_text, created);
     (StatusCode::OK, Json(completion)).into_response()
 }
