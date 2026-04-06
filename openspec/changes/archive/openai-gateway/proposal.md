@@ -1,6 +1,6 @@
 # Proposal: OpenAI Gateway — OpenAI-Compatible Chat Completions Endpoint
 
-> **Status**: Skeleton — this proposal is a roadmap placeholder. Full specs and tasks will be drafted when this change is picked up.
+> **Status**: Complete — shipped 2026-04-06. Gateway runs inside companion-core, 32/32 tests passing, Nix build clean.
 
 ## Tier
 

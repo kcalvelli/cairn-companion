@@ -1,5 +1,6 @@
 mod dbus;
 mod dispatcher;
+mod gateway;
 mod store;
 
 use std::sync::Arc;
@@ -61,7 +62,7 @@ async fn main() {
     info!("dispatcher ready");
 
     // 4. Acquire the D-Bus well-known name on the session bus.
-    let _connection = match dbus::serve(dispatcher).await {
+    let _connection = match dbus::serve(dispatcher.clone()).await {
         Ok(c) => c,
         Err(e) => {
             error!(%e, "failed to start D-Bus interface");
@@ -69,15 +70,42 @@ async fn main() {
         }
     };
 
-    // 5. Signal readiness via sd_notify(READY=1).
+    // 5. Start the OpenAI gateway if enabled via environment.
+    let shutdown_notify = Arc::new(tokio::sync::Notify::new());
+    let gateway_handle = if let Some(config) = gateway::types::GatewayConfig::from_env() {
+        info!(
+            port = config.port,
+            bind = %config.bind_address,
+            model = %config.model_name,
+            policy = ?config.session_policy,
+            "starting OpenAI gateway"
+        );
+        let notify = shutdown_notify.clone();
+        let gw_dispatcher = dispatcher.clone();
+        Some(tokio::spawn(async move {
+            if let Err(e) = gateway::serve(
+                gw_dispatcher,
+                config,
+                async move { notify.notified().await },
+            )
+            .await
+            {
+                error!(%e, "OpenAI gateway failed");
+            }
+        }))
+    } else {
+        info!("OpenAI gateway disabled (COMPANION_GATEWAY_ENABLE != 1)");
+        None
+    };
+
+    // 6. Signal readiness via sd_notify(READY=1).
     if let Err(e) = sd_notify::notify(false, &[sd_notify::NotifyState::Ready]) {
-        // Not fatal — we might not be running under systemd.
         warn!(%e, "sd_notify READY=1 failed (not running under systemd?)");
     } else {
         info!("signaled readiness to systemd");
     }
 
-    // 6. Enter the event loop — wait for shutdown signals.
+    // 7. Enter the event loop — wait for shutdown signals.
     use tokio::signal::unix::{signal, SignalKind};
 
     let mut sigterm = signal(SignalKind::terminate()).expect("failed to register SIGTERM handler");
@@ -99,12 +127,13 @@ async fn main() {
         }
     }
 
-    // Graceful shutdown: the D-Bus connection drops when _connection goes
-    // out of scope, which stops accepting new calls. In-flight turns will
-    // complete naturally as their tokio tasks finish. The dispatcher's
-    // session locks ensure no new turns start on sessions that are draining.
-    //
-    // TODO(Phase 5.3): Add explicit drain with 120s timeout for in-flight
-    // turns once we track active turn handles in the dispatcher.
+    // Graceful shutdown: signal the gateway to stop, then wait for it.
+    shutdown_notify.notify_one();
+    if let Some(handle) = gateway_handle {
+        let _ = handle.await;
+    }
+
+    // D-Bus connection drops when _connection goes out of scope.
+    // In-flight turns complete naturally via their tokio tasks.
     info!("companion-core stopped");
 }

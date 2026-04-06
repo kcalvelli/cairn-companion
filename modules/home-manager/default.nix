@@ -144,6 +144,49 @@ in
         '';
       };
     };
+
+    gateway.openai = {
+      enable = lib.mkEnableOption "OpenAI-compatible HTTP gateway inside the companion daemon";
+
+      port = lib.mkOption {
+        type = lib.types.port;
+        default = 18789;
+        description = ''
+          TCP port for the OpenAI gateway. Default matches ZeroClaw's
+          port for migration parity.
+        '';
+      };
+
+      bindAddress = lib.mkOption {
+        type = lib.types.str;
+        default = "0.0.0.0";
+        description = ''
+          Bind address for the gateway listener. Default binds all
+          interfaces; Tailscale ACLs are the access control boundary.
+        '';
+      };
+
+      modelName = lib.mkOption {
+        type = lib.types.str;
+        default = "companion";
+        description = ''
+          Model name returned by `/v1/models` and echoed in completion
+          responses. Cosmetic — the companion always routes through the
+          same claude backend regardless of what this says.
+        '';
+      };
+
+      sessionPolicy = lib.mkOption {
+        type = lib.types.enum' [ "per-conversation-id" "single-session" "ephemeral" ];
+        default = "per-conversation-id";
+        description = ''
+          How HTTP requests map to dispatcher sessions.
+          `per-conversation-id`: honor `X-Conversation-ID` header, default
+          to a shared session. `single-session`: all gateway traffic shares
+          one session. `ephemeral`: every request gets a fresh session.
+        '';
+      };
+    };
   };
 
   config = lib.mkIf cfg.enable (lib.mkMerge [
@@ -170,6 +213,12 @@ in
           TimeoutStopSec = 130;
           Environment = [
             "XDG_DATA_HOME=${config.xdg.dataHome}"
+          ] ++ lib.optionals cfg.gateway.openai.enable [
+            "COMPANION_GATEWAY_ENABLE=1"
+            "COMPANION_GATEWAY_PORT=${toString cfg.gateway.openai.port}"
+            "COMPANION_GATEWAY_BIND=${cfg.gateway.openai.bindAddress}"
+            "COMPANION_GATEWAY_MODEL=${cfg.gateway.openai.modelName}"
+            "COMPANION_GATEWAY_SESSION_POLICY=${cfg.gateway.openai.sessionPolicy}"
           ];
         };
 

@@ -43,7 +43,7 @@ See [ROADMAP.md](./ROADMAP.md) for the full build order and which OpenSpec propo
 
 ## Getting started
 
-> **Tier 0 + daemon-core are functional.** The `companion` wrapper, the home-manager module, and the default character-free persona all work today. The Tier 1 daemon (`companion-core`) is live — a systemd user service with D-Bus control plane, persistent session routing, and streaming support. Layering your own character on top is covered in [Authoring a persona](#authoring-a-persona) below. See [ROADMAP.md](./ROADMAP.md) for what's next.
+> **Tier 0 + daemon-core + openai-gateway are functional.** The `companion` wrapper, the home-manager module, and the default character-free persona all work today. The Tier 1 daemon (`companion-core`) is live — a systemd user service with D-Bus control plane, persistent session routing, streaming support, and an OpenAI-compatible HTTP gateway for Home Assistant voice integration. Layering your own character on top is covered in [Authoring a persona](#authoring-a-persona) below. See [ROADMAP.md](./ROADMAP.md) for what's next.
 
 Adding axios-companion to a NixOS + home-manager system looks like this:
 
@@ -122,7 +122,54 @@ busctl --user call org.axios.Companion /org/axios/Companion \
 journalctl --user -u companion-core -f
 ```
 
-The daemon is the foundation for all Tier 1 features — the OpenAI gateway, channel adapters, CLI client, and TUI dashboard all connect through its dispatcher.
+The daemon is the foundation for all Tier 1 features — channel adapters, CLI client, and TUI dashboard all connect through its dispatcher.
+
+### OpenAI gateway
+
+When `gateway.openai.enable = true`, the daemon starts an OpenAI-compatible HTTP server alongside the D-Bus interface. This restores the voice integration that Home Assistant's Conversation integration depends on — HA points at the gateway's `/v1/chat/completions` endpoint and uses it as the LLM backend for Assist voice pipelines.
+
+```nix
+services.axios-companion = {
+  enable = true;
+  daemon.enable = true;
+  gateway.openai = {
+    enable = true;
+    port = 18789;           # default — matches ZeroClaw's port
+    modelName = "sid";      # cosmetic — shown in /v1/models
+    sessionPolicy = "per-conversation-id";  # or "single-session" / "ephemeral"
+  };
+};
+```
+
+Endpoints:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Returns `{"status":"ok"}` — for monitoring |
+| `/v1/models` | GET | Returns configured model in OpenAI format |
+| `/v1/chat/completions` | POST | OpenAI-compatible chat completions (streaming + non-streaming) |
+
+Session control: send an `X-Conversation-ID` header to route requests to distinct sessions (e.g., one per room satellite). Without the header, all requests share a default session.
+
+```bash
+# Non-streaming
+curl -s http://localhost:18789/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"hello"}]}'
+
+# Streaming
+curl -sN http://localhost:18789/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"hello"}],"stream":true}'
+
+# With conversation ID
+curl -s http://localhost:18789/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "X-Conversation-ID: kitchen" \
+  -d '{"messages":[{"role":"user","content":"hello"}]}'
+```
+
+No authentication — Tailscale network trust is the access boundary, same as every other Tier 1+ network surface.
 
 ### MCP tool integration
 
@@ -220,7 +267,7 @@ axios-companion/
 ├── openspec/
 │   ├── config.yaml             # Context, non-goals, and architectural rules
 │   └── changes/
-│       ├── archive/            # Completed proposals (bootstrap, daemon-core)
+│       ├── archive/            # Completed proposals (bootstrap, daemon-core, openai-gateway)
 │       ├── cli-client/         # Tier 1 CLI subcommands
 │       ├── tui-dashboard/      # Tier 1 terminal dashboard
 │       ├── channel-telegram/   # Tier 1 first channel adapter
