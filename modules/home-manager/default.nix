@@ -177,7 +177,7 @@ in
       };
 
       sessionPolicy = lib.mkOption {
-        type = lib.types.enum' [ "per-conversation-id" "single-session" "ephemeral" ];
+        type = lib.types.enum [ "per-conversation-id" "single-session" "ephemeral" ];
         default = "per-conversation-id";
         description = ''
           How HTTP requests map to dispatcher sessions.
