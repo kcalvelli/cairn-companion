@@ -54,10 +54,10 @@
 
 ## Phase 6: Home-manager module updates
 
-- [ ] **6.1** Add `services.axios-companion.daemon.enable` option (boolean, default `false`)
-- [ ] **6.2** Add `services.axios-companion.daemon.package` option (default: the flake's `companion-core` package)
-- [ ] **6.3** Wire `systemd.user.services.companion-core` unit in the module when `daemon.enable = true`, with `Environment=` for session store path
-- [ ] **6.4** Ensure Tier 0 `companion` wrapper continues to work unchanged when `daemon.enable = false` (no regressions)
+- [x] **6.1** Add `services.axios-companion.daemon.enable` option (boolean, default `false`)
+- [x] **6.2** Add `services.axios-companion.daemon.package` option (default: the flake's `companion-core` package)
+- [x] **6.3** Wire `systemd.user.services.companion-core` unit in the module when `daemon.enable = true`, with `Environment=` for session store path
+- [x] **6.4** Ensure Tier 0 `companion` wrapper continues to work unchanged when `daemon.enable = false` (no regressions)
 - [ ] **6.5** Verify: `home-manager switch` with `daemon.enable = true` installs and starts the service
 
 ## Phase 7: End-to-end testing, documentation, and close

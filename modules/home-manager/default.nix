@@ -1,8 +1,12 @@
-# axios-companion home-manager module (Tier 0).
+# axios-companion home-manager module.
 #
-# Exposes `services.axios-companion.*` options and, when enabled, installs a
-# per-user `companion` wrapper binary that invokes `claude` with persona
-# files, workspace directory, and any mcp-gateway config pre-loaded.
+# Tier 0: Exposes `services.axios-companion.*` options and, when enabled,
+# installs a per-user `companion` wrapper binary that invokes `claude`
+# with persona files, workspace directory, and any mcp-gateway config.
+#
+# Tier 1: Adds `services.axios-companion.daemon.*` options. When
+# `daemon.enable = true`, installs and starts the `companion-core`
+# systemd user service (D-Bus control plane, session routing, etc.).
 #
 # This module is a thin closure over the flake's `self` so it can reach
 # `self.lib.<system>.buildCompanion` — the public helper that builds the
@@ -126,9 +130,53 @@ in
         When set, the wrapper uses this path exclusively.
       '';
     };
+
+    daemon = {
+      enable = lib.mkEnableOption "companion-core daemon (Tier 1 D-Bus service)";
+
+      package = lib.mkOption {
+        type = lib.types.package;
+        default = self.packages.${pkgs.system}.companion-core;
+        defaultText = lib.literalExpression "inputs.axios-companion.packages.\${pkgs.system}.companion-core";
+        description = ''
+          The companion-core daemon package. Override only if you have a
+          local fork or want to pin a specific build.
+        '';
+      };
+    };
   };
 
-  config = lib.mkIf cfg.enable {
-    home.packages = [ cfg.package ];
-  };
+  config = lib.mkIf cfg.enable (lib.mkMerge [
+    {
+      home.packages = [ cfg.package ];
+    }
+
+    (lib.mkIf cfg.daemon.enable {
+      # Install the daemon binary.
+      home.packages = [ cfg.daemon.package ];
+
+      # Systemd user service for the daemon.
+      systemd.user.services.companion-core = {
+        Unit = {
+          Description = "axios-companion daemon";
+          Documentation = "https://github.com/kcalvelli/axios-companion";
+        };
+
+        Service = {
+          Type = "notify";
+          ExecStart = "${cfg.daemon.package}/bin/companion-core";
+          Restart = "on-failure";
+          RestartSec = 5;
+          TimeoutStopSec = 130;
+          Environment = [
+            "XDG_DATA_HOME=${config.xdg.dataHome}"
+          ];
+        };
+
+        Install = {
+          WantedBy = [ "default.target" ];
+        };
+      };
+    })
+  ]);
 }
