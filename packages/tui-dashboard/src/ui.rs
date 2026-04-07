@@ -283,7 +283,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         .split(popup_layout[1])[1]
 }
 
-fn truncate(s: &str, max: usize) -> String {
+pub(crate) fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
         s.to_string()
     } else {
@@ -291,7 +291,7 @@ fn truncate(s: &str, max: usize) -> String {
     }
 }
 
-fn format_uptime(secs: u32) -> String {
+pub(crate) fn format_uptime(secs: u32) -> String {
     let h = secs / 3600;
     let m = (secs % 3600) / 60;
     let s = secs % 60;
@@ -304,7 +304,7 @@ fn format_uptime(secs: u32) -> String {
     }
 }
 
-fn relative_time(unix_ts: u32) -> String {
+pub(crate) fn relative_time(unix_ts: u32) -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as u32)
@@ -320,5 +320,98 @@ fn relative_time(unix_ts: u32) -> String {
         format!("{}h ago", delta / 3600)
     } else {
         format!("{}d ago", delta / 86400)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncate_short_string_unchanged() {
+        assert_eq!(truncate("hello", 10), "hello");
+    }
+
+    #[test]
+    fn truncate_exact_length_unchanged() {
+        assert_eq!(truncate("hello", 5), "hello");
+    }
+
+    #[test]
+    fn truncate_long_string_adds_ellipsis() {
+        assert_eq!(truncate("abcdefghij", 7), "abcd...");
+    }
+
+    #[test]
+    fn truncate_very_short_max() {
+        // max=3 means 0 chars + "..." — degenerate but shouldn't panic.
+        let result = truncate("abcdef", 3);
+        assert_eq!(result, "...");
+    }
+
+    #[test]
+    fn format_uptime_seconds_only() {
+        assert_eq!(format_uptime(42), "42s");
+    }
+
+    #[test]
+    fn format_uptime_minutes_and_seconds() {
+        assert_eq!(format_uptime(125), "2m 5s");
+    }
+
+    #[test]
+    fn format_uptime_hours() {
+        assert_eq!(format_uptime(3661), "1h 1m 1s");
+    }
+
+    #[test]
+    fn format_uptime_zero() {
+        assert_eq!(format_uptime(0), "0s");
+    }
+
+    #[test]
+    fn relative_time_just_now() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as u32;
+        assert_eq!(relative_time(now), "just now");
+    }
+
+    #[test]
+    fn relative_time_minutes_ago() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as u32;
+        assert_eq!(relative_time(now - 300), "5m ago");
+    }
+
+    #[test]
+    fn relative_time_hours_ago() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as u32;
+        assert_eq!(relative_time(now - 7200), "2h ago");
+    }
+
+    #[test]
+    fn relative_time_days_ago() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as u32;
+        assert_eq!(relative_time(now - 172800), "2d ago");
+    }
+
+    #[test]
+    fn relative_time_future_timestamp() {
+        // A timestamp in the future should show "just now" (delta = 0).
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as u32;
+        assert_eq!(relative_time(now + 1000), "just now");
     }
 }

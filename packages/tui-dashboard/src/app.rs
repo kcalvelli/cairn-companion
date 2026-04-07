@@ -169,3 +169,207 @@ impl App {
         }
     }
 }
+
+#[cfg(test)]
+fn make_session(surface: &str, conv_id: &str) -> SessionRow {
+    SessionRow {
+        surface: surface.to_string(),
+        conversation_id: conv_id.to_string(),
+        claude_session_id: String::new(),
+        status: "active".to_string(),
+        last_active_at: 1000,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_app_defaults() {
+        let app = App::new();
+        assert!(app.running);
+        assert!(!app.connected);
+        assert_eq!(app.focus, Focus::Sessions);
+        assert!(!app.show_help);
+        assert!(app.sessions.is_empty());
+        assert_eq!(app.selected_session, 0);
+        assert_eq!(app.conversation_scroll, 0);
+    }
+
+    #[test]
+    fn selected_session_key_empty() {
+        let app = App::new();
+        assert!(app.selected_session_key().is_none());
+    }
+
+    #[test]
+    fn selected_session_key_returns_current() {
+        let mut app = App::new();
+        app.sessions = vec![make_session("cli", "abc-123")];
+        let key = app.selected_session_key().unwrap();
+        assert_eq!(key, ("cli", "abc-123"));
+    }
+
+    #[test]
+    fn select_next_and_prev() {
+        let mut app = App::new();
+        app.sessions = vec![
+            make_session("cli", "a"),
+            make_session("cli", "b"),
+            make_session("cli", "c"),
+        ];
+
+        assert_eq!(app.selected_session, 0);
+        app.select_next();
+        assert_eq!(app.selected_session, 1);
+        app.select_next();
+        assert_eq!(app.selected_session, 2);
+        // Can't go past the end.
+        app.select_next();
+        assert_eq!(app.selected_session, 2);
+
+        app.select_prev();
+        assert_eq!(app.selected_session, 1);
+        app.select_prev();
+        assert_eq!(app.selected_session, 0);
+        // Can't go below zero.
+        app.select_prev();
+        assert_eq!(app.selected_session, 0);
+    }
+
+    #[test]
+    fn select_next_on_empty_is_noop() {
+        let mut app = App::new();
+        app.select_next();
+        assert_eq!(app.selected_session, 0);
+    }
+
+    #[test]
+    fn selection_resets_scroll() {
+        let mut app = App::new();
+        app.sessions = vec![make_session("cli", "a"), make_session("cli", "b")];
+        app.conversation_scroll = 5;
+        app.select_next();
+        assert_eq!(app.conversation_scroll, 0);
+    }
+
+    #[test]
+    fn scroll_up_down_bottom() {
+        let mut app = App::new();
+        assert_eq!(app.conversation_scroll, 0);
+
+        app.scroll_up();
+        assert_eq!(app.conversation_scroll, 1);
+        app.scroll_up();
+        assert_eq!(app.conversation_scroll, 2);
+
+        app.scroll_down();
+        assert_eq!(app.conversation_scroll, 1);
+
+        app.scroll_bottom();
+        assert_eq!(app.conversation_scroll, 0);
+
+        // scroll_down at 0 stays at 0.
+        app.scroll_down();
+        assert_eq!(app.conversation_scroll, 0);
+    }
+
+    #[test]
+    fn toggle_focus() {
+        let mut app = App::new();
+        assert_eq!(app.focus, Focus::Sessions);
+        app.toggle_focus();
+        assert_eq!(app.focus, Focus::Conversation);
+        app.toggle_focus();
+        assert_eq!(app.focus, Focus::Sessions);
+    }
+
+    #[test]
+    fn conversation_buf_creates_on_first_access() {
+        let mut app = App::new();
+        assert!(app.conversations.is_empty());
+
+        let buf = app.conversation_buf_mut("cli", "conv-1");
+        buf.text.push_str("hello");
+
+        assert_eq!(app.conversations.len(), 1);
+        assert_eq!(app.conversations[0].surface, "cli");
+        assert_eq!(app.conversations[0].text, "hello");
+    }
+
+    #[test]
+    fn conversation_buf_reuses_existing() {
+        let mut app = App::new();
+
+        app.conversation_buf_mut("cli", "conv-1").text.push_str("first");
+        app.conversation_buf_mut("cli", "conv-1").text.push_str(" second");
+
+        assert_eq!(app.conversations.len(), 1);
+        assert_eq!(app.conversations[0].text, "first second");
+    }
+
+    #[test]
+    fn conversation_buf_separates_sessions() {
+        let mut app = App::new();
+
+        app.conversation_buf_mut("cli", "a").text.push_str("one");
+        app.conversation_buf_mut("cli", "b").text.push_str("two");
+
+        assert_eq!(app.conversations.len(), 2);
+    }
+
+    #[test]
+    fn update_sessions_preserves_selection() {
+        let mut app = App::new();
+        app.sessions = vec![
+            make_session("cli", "a"),
+            make_session("cli", "b"),
+            make_session("cli", "c"),
+        ];
+        app.selected_session = 1; // selected "b"
+
+        // New list has the same sessions in different order.
+        app.update_sessions(vec![
+            make_session("cli", "c"),
+            make_session("cli", "a"),
+            make_session("cli", "b"),
+        ]);
+
+        // Should still be pointing at "b", now at index 2.
+        assert_eq!(app.selected_session, 2);
+        assert_eq!(app.selected_session_key().unwrap(), ("cli", "b"));
+    }
+
+    #[test]
+    fn update_sessions_clamps_when_selected_removed() {
+        let mut app = App::new();
+        app.sessions = vec![
+            make_session("cli", "a"),
+            make_session("cli", "b"),
+            make_session("cli", "c"),
+        ];
+        app.selected_session = 2; // selected "c"
+
+        // "c" is gone.
+        app.update_sessions(vec![
+            make_session("cli", "a"),
+            make_session("cli", "b"),
+        ]);
+
+        // Should clamp to last valid index.
+        assert!(app.selected_session <= 1);
+    }
+
+    #[test]
+    fn update_sessions_empty_list() {
+        let mut app = App::new();
+        app.sessions = vec![make_session("cli", "a")];
+        app.selected_session = 0;
+
+        app.update_sessions(vec![]);
+
+        assert_eq!(app.selected_session, 0);
+        assert!(app.sessions.is_empty());
+    }
+}
