@@ -284,7 +284,10 @@ Everything else goes straight to the companion.";
             let _ = bot.send_message(chat_id, reply).await;
             true
         }
-        _ => false,
+        _ => {
+            let _ = bot.send_message(chat_id, "Not a command. Try /help if you're lost.").await;
+            true
+        }
     }
 }
 
