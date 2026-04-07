@@ -153,13 +153,6 @@ pub async fn serve(
     config: TelegramConfig,
     shutdown: Arc<Notify>,
 ) {
-    info!(
-        allowed_users = config.allowed_users.len(),
-        mention_only = config.mention_only,
-        stream_mode = ?config.stream_mode,
-        "starting Telegram adapter"
-    );
-
     let bot = Bot::new(&config.bot_token);
     let config = Arc::new(config);
 
@@ -299,6 +292,11 @@ async fn handle_message(
         text_len = text.len(),
         "Telegram message received"
     );
+
+    // Show "typing..." indicator while we process.
+    if let Err(e) = bot.send_chat_action(chat_id, teloxide::types::ChatAction::Typing).await {
+        debug!(%e, "failed to send typing indicator");
+    }
 
     let turn_req = TurnRequest {
         surface_id: "telegram".into(),
