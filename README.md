@@ -43,7 +43,7 @@ See [ROADMAP.md](./ROADMAP.md) for the full build order and which OpenSpec propo
 
 ## Getting started
 
-> **Tier 0 + daemon-core + openai-gateway are functional.** The `companion` wrapper, the home-manager module, and the default character-free persona all work today. The Tier 1 daemon (`companion-core`) is live — a systemd user service with D-Bus control plane, persistent session routing, streaming support, and an OpenAI-compatible HTTP gateway for Home Assistant voice integration. Layering your own character on top is covered in [Authoring a persona](#authoring-a-persona) below. See [ROADMAP.md](./ROADMAP.md) for what's next.
+> **Tier 0 is complete and most of Tier 1 is live.** The `companion` wrapper, the home-manager module, and the default character-free persona all work today. The Tier 1 daemon (`companion-core`) is running — systemd user service, D-Bus control plane, persistent session routing, streaming support, an OpenAI-compatible HTTP gateway for Home Assistant voice integration, a Rust CLI client, a ratatui TUI dashboard, and **two channel adapters: Telegram and XMPP**. Remaining Tier 1 work: `channel-email`, `channel-discord`, voice (STT+TTS), and a handful of deferred CLI subcommands. Layering your own character on top is covered in [Authoring a persona](#authoring-a-persona) below. See [ROADMAP.md](./ROADMAP.md) for what's next.
 
 Adding axios-companion to a NixOS + home-manager system looks like this:
 
@@ -171,6 +171,63 @@ curl -s http://localhost:18789/v1/chat/completions \
 
 No authentication — Tailscale network trust is the access boundary, same as every other Tier 1+ network surface.
 
+### Channel adapters
+
+When the daemon is running, channel adapters let outside-the-terminal surfaces talk to the companion the same way the CLI does — they all dispatch through the same session router. Each adapter is opt-in and runs as an async task inside `companion-core`. Today the daemon ships two: **Telegram** (long-poll bot via teloxide) and **XMPP** (native client for self-hosted Prosody/ejabberd via tokio-xmpp). Email and Discord adapters are planned but not yet shipped.
+
+```nix
+services.axios-companion = {
+  enable = true;
+  daemon.enable = true;
+
+  # Telegram bot
+  channels.telegram = {
+    enable = true;
+    botTokenFile = "/run/agenix/telegram-bot-token";
+    allowedUsers = [ 123456789 ];           # Telegram user IDs (deny by default)
+    mentionOnly = false;                    # group chats only — DMs always handled
+    streamMode = "single_message";          # edit-in-place via Telegram message edits
+  };
+
+  # XMPP client (DMs working today; MUC support is on the way)
+  channels.xmpp = {
+    enable = true;
+    jid = "sid@chat.example.org";
+    passwordFile = "/run/agenix/xmpp-bot-password";
+    server = "127.0.0.1";                   # or a Tailscale Serve TCP host
+    port = 5222;
+    allowedJids = [ "keith@chat.example.org" ];
+    mentionOnly = true;                     # MUC default — DMs always handled
+    streamMode = "single_message";          # XEP-0308 Last Message Correction (Phase 4 pending)
+    mucRooms = [
+      { jid = "household@muc.chat.example.org"; nick = "Sid"; }
+    ];
+  };
+};
+```
+
+**Shared design rules across both adapters:**
+
+- **Empty allowlist = deny everyone.** There is no implicit-trust mode. If you forget the allowlist, the bot connects, presents itself, and ignores every message it receives.
+- **Sessions are keyed by `(surface_id, conversation_id)`.** A given human gets a continuous session per channel — but Telegram and XMPP are separate sessions by design, because the same person on two different channels often *means* different things in each.
+- **Three commands across both adapters:** `new` resets the session, `status` reports session state, `help` lists them. Telegram uses the `/` prefix (Telegram registers commands server-side, clients know to forward). XMPP uses `!` because Gajim and other XMPP clients intercept `/` locally for `/me`, `/say`, `/clear`, MUC moderation — slash commands literally never reach the wire. Bang is the standard XMPP/IRC bot convention.
+- **Unrecognized commands get a deflection reply,** not a forward to the dispatcher. This prevents Claude Code skill leakage from typos like `/skil` or `!skil`.
+- **`streamMode = "single_message"` is the default for both.** Telegram uses native message edits (one bubble that grows as the response streams in). XMPP uses XEP-0308 Last Message Correction stanzas (one stanza followed by `<replace/>` updates). `multi_message` collects the full response and splits it: 4096 chars for Telegram, ~3000 chars for XMPP (the empirical comfortable size for Conversations, Gajim, and Dino).
+- **Both adapters reconnect with backoff** if the upstream service goes away. Verified live for XMPP by restarting Prosody under the daemon and watching it recover in ~1 second.
+
+**Telegram-specific notes:**
+
+- One bot token = one long-poller, so the adapter is single-host (run it on whichever machine the bot belongs on). The daemon does not support running two adapters against the same token.
+- `mentionOnly = true` only affects group chats; private DMs are always handled regardless of the setting.
+
+**XMPP-specific notes:**
+
+- Connects directly to the address you give it — **no SRV lookups.** This is intentional so that a Tailscale Serve TCP-passthrough endpoint (`tailscale serve --tcp=5222 ...`, *not* `--tls-terminated-tcp`) just works without DNS gymnastics.
+- Currently accepts the server's TLS cert without verification. The architectural reason is documented in the header comment of `packages/companion-core/src/channels/xmpp/connector.rs`; the short version is that `tokio-xmpp` 5's shipped connector hardcodes its rustls config with no override hook, and our chat infra presents a self-signed cert behind Tailscale. When real certs land (e.g. ACME-issued or Tailscale-issued certs for chat), a `tlsVerify` option will land alongside the verified branch in the same commit.
+- `mentionOnly = true` is the **default** for XMPP (inverted from Telegram's default of `false`), because high-volume household MUCs would otherwise burn tokens on every message that drifts past.
+- MUC support is wired in the module options (`mucRooms`) but the actual join is deferred to a later phase. The daemon currently logs `MUC join deferred to Phase 5` and skips. When that phase ships, configured rooms activate automatically on the next rebuild — no further config needed.
+- Bare-JID conversation routing means a user gets the same session whether they message you from Conversations on their phone, Gajim on a desktop, or Dino on a different desktop. Resource roaming is handled correctly.
+
 ### MCP tool integration
 
 The wrapper auto-detects an mcp-gateway configuration at runtime and passes it to Claude Code as `--mcp-config=<path>`, making every tool your gateway exposes available in the session. Detection is purely file-existence-based; the wrapper checks these paths in order and uses the first one it finds:
@@ -267,20 +324,20 @@ axios-companion/
 ├── openspec/
 │   ├── config.yaml             # Context, non-goals, and architectural rules
 │   └── changes/
-│       ├── archive/            # Completed proposals (bootstrap, daemon-core, openai-gateway)
+│       ├── archive/            # Completed proposals (bootstrap, daemon-core,
+│       │                       # openai-gateway, channel-xmpp, ...)
 │       ├── cli-client/         # Tier 1 CLI subcommands
 │       ├── tui-dashboard/      # Tier 1 terminal dashboard
 │       ├── channel-telegram/   # Tier 1 first channel adapter
 │       ├── channel-email/      # Tier 1 email adapter
 │       ├── channel-discord/    # Tier 1 Discord adapter
-│       ├── channel-xmpp/       # Tier 1 XMPP adapter
 │       ├── spoke-tools/        # Tier 2 machine-local MCP tool servers
 │       ├── distributed-routing/# Tier 2 hub/spoke multi-machine routing
 │       ├── gui-gtk4/           # Optional GUI
 │       └── axios-integration/  # Thin consumer-side proposal (lives in axios)
 ```
 
-Each change is a self-contained proposal with `proposal.md`, `specs/` describing behavior, and `tasks.md` with an implementation checklist. Only the `bootstrap` change is fully drafted; the others are skeleton proposals that will be fleshed out when picked up.
+Each change is a self-contained proposal with `proposal.md`, `specs/` describing behavior, and `tasks.md` with an implementation checklist. Shipped changes (`bootstrap`, `daemon-core`, `openai-gateway`, `cli-client`, `tui-dashboard`, `channel-telegram`, `channel-xmpp`) are either fully drafted or archived. The remaining proposals are skeletons that get fleshed out when picked up.
 
 ## Development workflow
 

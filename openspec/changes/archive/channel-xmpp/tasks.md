@@ -23,6 +23,7 @@ Second channel adapter, after telegram. Stress-tests the channel pattern against
   - **ADDENDUM 2026-04-08**: The original task said "accept self-signed cert when `tls_verify = false`" with the implication that there'd be a `tls_verify` config field. This was dropped from `XmppConfig` because we currently support only the no-verify path — adding a config field for an unimplemented `tls_verify=true` branch would let an operator silently get insecure TLS while believing they asked for verification. When real certs land (e.g. Tailscale-issued certs for chat), the `tls_verify` field and the verified branch in `connector::build_tls_config` land in the same commit.
 - [x] **2.6** `send_initial_presence()` runs on the first non-resumed `Online` event. Sends `<presence/>` with `Show::Chat` and a Sid status line ("Sid here — go ahead and waste my time."). On resumed sessions, presence is not re-sent (smacks resumption preserves it).
 - [x] **2.7** Reconnect-with-backoff loop in `serve()`. Exponential backoff capped at 60 seconds, reset to 1s on a clean session end. The backoff sleep is awaited inside `tokio::select!` against the shutdown `Notify` so a stop signal doesn't have to wait the full window. Verified by code review against telegram's pattern; live verification deferred to Phase 8.
+  - **ADDENDUM 2026-04-08 (live verification)**: confirmed end-to-end on mini. `sudo systemctl restart prosody` while the daemon was up; journal showed `Failed to connect: I/O error: Connection refused (os error 111). Retrying in 1s.` followed ~1 second later by `XMPP online` and resumption of DM handling. **Notable**: the "Retrying in 1s" line is emitted by tokio-xmpp's internal `stanzastream` reconnect, not by our `serve()` outer loop — the library handles the common case of a single-cycle connection failure on its own. Our outer loop is belt-and-suspenders for full client failures (auth errors, repeated connect failures, etc). Total downtime through a clean Prosody restart is ~1 second, well below the bot's perceptual threshold.
 - [x] **2.8** **(folded forward from 7.1)** XMPP adapter wired into `main.rs` as step 5c, env-gated, shared `Arc<Dispatcher>`, shutdown via the existing `Notify`. Done now (instead of in Phase 7) so the dead-code warnings from the unwired connector don't pile up across Phase 3-6 commits. The systemd unit / NixOS module work (7.2-7.6) stays in Phase 7.
 
 ## Phase 3: Direct message handling
@@ -65,23 +66,23 @@ Second channel adapter, after telegram. Stress-tests the channel pattern against
 ## Phase 7: Wiring
 
 - [x] **7.1** ~~Add the xmpp adapter as step 5c in `packages/companion-core/src/main.rs`, env-gated, shared `Arc<Dispatcher>`, shutdown via the existing `Notify`.~~ Folded forward into Phase 2 (see 2.8). The systemd / module / host-config tasks below remain in Phase 7.
-- [ ] **7.2** Add `services.axios-companion.channels.xmpp` options to `modules/home-manager/default.nix`: `enable`, `jid`, `passwordFile`, `server` (default `127.0.0.1`), `port` (default `5222`), `tlsVerify` (default `false`), `allowedJids`, `mucRooms` (list of `{ jid, nick }`), `mentionOnly` (default `true`), `streamMode` (default `single_message`).
-- [ ] **7.3** Add an assertion: `channels.xmpp.enable -> daemon.enable`.
-- [ ] **7.4** Wire the env vars into the systemd unit, mirroring telegram's block.
-- [ ] **7.5** Enable on mini in `~/.config/nixos_config/hosts/mini.nix` via the existing `home-manager.users.keith` host override. Reuse `secrets/xmpp-bot-password.age`. Configure `xojabo@muc.chat.taile0fb4.ts.net` as a MUC room with nick `Sid`.
-- [ ] **7.6** Verify `nix flake check` passes for both the companion repo and `~/.config/nixos_config`.
+- [x] **7.2** Added `services.axios-companion.channels.xmpp` options to `modules/home-manager/default.nix`: `enable`, `jid`, `passwordFile`, `server` (default `127.0.0.1`), `port` (default `5222`), `allowedJids`, `mucRooms` (submodule list of `{ jid, nick }`), `mentionOnly` (default `true`), `streamMode` (default `single_message`). **`tlsVerify` was deliberately omitted** — see the addendum on 2.5 for why.
+- [x] **7.3** Assertion shipped: `channels.xmpp.enable -> daemon.enable` lives in the same `mkMerge` block as the parallel telegram and CLI/TUI assertions.
+- [x] **7.4** Env vars wired into the systemd unit's `Environment=` block, parallel to telegram's. `COMPANION_XMPP_ENABLE`, `_JID`, `_PASSWORD_FILE`, `_SERVER`, `_PORT`, `_ALLOWED_JIDS`, `_MUC_ROOMS` (joined as `room/nick,room/nick,...`), `_MENTION_ONLY`, `_STREAM_MODE`.
+- [x] **7.5** Enabled on mini in `~/.config/nixos_config/hosts/mini.nix` (commit `d807f1a` over there). Reuses `secrets/xmpp-bot-password.age`. `xojabo@muc.chat.taile0fb4.ts.net` configured with nick `Sid` — currently inert, will activate when Phase 5 ships.
+- [x] **7.6** `nix flake check` green on the companion repo (re-verified live 2026-04-08). The `~/.config/nixos_config` rebuild on mini is the de-facto verification on the consumer side — `update-flake` + `rebuild-switch` succeeded with the new module options.
 
 ## Phase 8: Live test, docs, archive
 
-- [ ] **8.1** Deploy to mini: `sudo nixos-rebuild switch --flake .#mini`.
-- [ ] **8.2** Live DM test from Conversations on Keith's phone to `sid@chat.taile0fb4.ts.net`. Verify: response arrives, streaming works (single-message corrections render correctly in Conversations), `/new` resets session, `/status` reports correctly.
-- [ ] **8.3** Live MUC test in `xojabo@muc.chat.taile0fb4.ts.net`. Verify: bot is present in room, ignores ambient chatter, responds when addressed by `Sid:` or `@Sid`, does not loop on its own messages. **Built-in test fixture**: John types "xojabo" in `xojabo` constantly because he likes the way it sounds. The bot must NOT respond to a bare "xojabo" message — that's the canonical false-positive case for `mention_only`. If Sid responds to John's xojabo spam even once, the mention parser is broken.
-- [ ] **8.4** Watch `journalctl --user -u axios-companion -f` during the test for warnings/errors. Address anything noisy.
-- [ ] **8.5** Update `README.md` with an XMPP setup section (briefly — link to channel-telegram's section as the model since the patterns rhyme).
-- [ ] **8.6** Update `ROADMAP.md` to mark `channel-xmpp` complete.
-- [ ] **8.7** Write a session handoff memory note matching the channel-telegram precedent (`project_session_handoff_<date>_xmpp.md`).
-- [ ] **8.8** Archive: `mv openspec/changes/channel-xmpp openspec/changes/archive/channel-xmpp`.
-- [ ] **8.9** Commit the archive move.
+- [x] **8.1** Deployed to mini via `update-flake` + `rebuild-switch` (the standard mini-side workflow), 2026-04-08. Daemon picked up the new module options on the next service start.
+- [x] **8.2** Live DM test from Cheogram on Keith's phone to `sid@chat.taile0fb4.ts.net` passed. Free-text DMs round-trip through the dispatcher, the bang commands (`!new`, `!status`, `!help`) work, persona files render correctly through the chain, response arrives as a single chat stanza (Phase 4 streaming corrections still pending). **Note**: original task said "Conversations on Keith's phone" — actual client used was Cheogram, but the result is the same (both are XMPP clients, neither did anything that would distinguish them at the protocol level).
+- [ ] **8.3** Live MUC test in `xojabo@muc.chat.taile0fb4.ts.net`. Verify: bot is present in room, ignores ambient chatter, responds when addressed by `Sid:` or `@Sid`, does not loop on its own messages. **Built-in test fixture**: John types "xojabo" in `xojabo` constantly because he likes the way it sounds. The bot must NOT respond to a bare "xojabo" message — that's the canonical false-positive case for `mention_only`. If Sid responds to John's xojabo spam even once, the mention parser is broken. **Deferred to Phase 5** — the MUC join doesn't exist yet.
+- [x] **8.4** Journal watched during the live DM test, no warnings or errors. Phase 7.6 reconnect verification (see 2.7 addendum) is the second pass — also clean except for the expected disconnect/reconnect lines.
+- [x] **8.5** README updated: new "Channel adapters" section under the OpenAI gateway section, covering both Telegram and XMPP with shared design rules and per-adapter notes. The "Tier 0 + daemon-core + openai-gateway are functional" callout was also updated to reflect that CLI, TUI, and the channel adapters are now live.
+- [x] **8.6** ROADMAP.md updated: `channel-xmpp` marked `[x]` with the shipped-on date and link to the archived change.
+- [ ] **8.7** Session handoff memory note. Done at session end, not now.
+- [x] **8.8** Archived: `mv openspec/changes/channel-xmpp openspec/changes/archive/channel-xmpp`.
+- [x] **8.9** Archive move committed alongside the README/ROADMAP/tasks updates as one paperwork commit.
 
 ## Decisions deferred to implementation
 
