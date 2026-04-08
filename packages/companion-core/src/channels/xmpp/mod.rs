@@ -406,9 +406,12 @@ async fn handle_chat_message(
         "XMPP DM received"
     );
 
-    // Slash commands short-circuit the dispatcher.
+    // Bang commands short-circuit the dispatcher. We use `!` instead of `/`
+    // because Gajim (and probably other XMPP clients) intercept slash
+    // commands locally for /me, /say, /clear, MUC moderation, etc — they
+    // never reach the wire. Bang is the standard XMPP/IRC bot convention.
     let trimmed = body.trim();
-    if trimmed.starts_with('/') {
+    if trimmed.starts_with('!') {
         let reply_text = handle_command(&sender_bare, trimmed, dispatcher).await;
         send_chat_reply(client, &sender_bare, &reply_text).await?;
         return Ok(());
@@ -464,9 +467,10 @@ async fn send_chat_reply(
     Ok(())
 }
 
-/// Extract the command token from a slash command body. Takes the first
+/// Extract the command token from a bang command body. Takes the first
 /// whitespace-separated token and strips any trailing `@suffix` (some MUC
-/// clients append the bot nick — `/new@Sid`). Returns `""` for empty input.
+/// clients append the bot nick — `!new@Sid`). Returns `""` for empty input.
+/// Prefix-agnostic — caller is responsible for matching against `!cmd` etc.
 fn extract_command_name(text: &str) -> &str {
     let cmd = text.split_whitespace().next().unwrap_or("");
     cmd.split('@').next().unwrap_or(cmd)
@@ -485,13 +489,13 @@ async fn handle_command(
     let conversation_id = sender.to_string();
 
     match cmd {
-        "/new" => {
+        "!new" => {
             let store = dispatcher.store().await;
             let had_session = store
                 .delete_session("xmpp", &conversation_id)
                 .unwrap_or(false);
             drop(store);
-            info!(from = %sender, "xmpp /new — session reset");
+            info!(from = %sender, "xmpp !new — session reset");
             if had_session {
                 "Fine. Everything we just talked about? Gone. Hope it wasn't important."
                     .to_string()
@@ -499,7 +503,7 @@ async fn handle_command(
                 "There's nothing to forget. We haven't even started yet.".to_string()
             }
         }
-        "/status" => {
+        "!status" => {
             let store = dispatcher.store().await;
             let session = store
                 .lookup_session("xmpp", &conversation_id)
@@ -521,14 +525,14 @@ async fn handle_command(
                 None => "No active session. Send a message to start one.".to_string(),
             }
         }
-        "/help" => "\
-/new — clear session, start fresh\n\
-/status — show current session info\n\
-/help — this message\n\
+        "!help" => "\
+!new — clear session, start fresh\n\
+!status — show current session info\n\
+!help — this message\n\
 \n\
 Everything else goes straight to the companion."
             .to_string(),
-        _ => "Not a command. Try /help if you're lost.".to_string(),
+        _ => "Not a command. Try !help if you're lost.".to_string(),
     }
 }
 
@@ -661,23 +665,23 @@ mod tests {
 
     #[test]
     fn extract_command_name_basic() {
-        assert_eq!(extract_command_name("/new"), "/new");
-        assert_eq!(extract_command_name("/status"), "/status");
-        assert_eq!(extract_command_name("/help"), "/help");
+        assert_eq!(extract_command_name("!new"), "!new");
+        assert_eq!(extract_command_name("!status"), "!status");
+        assert_eq!(extract_command_name("!help"), "!help");
     }
 
     #[test]
     fn extract_command_name_strips_arguments() {
-        // Telegram users sometimes type "/new keep this part"; the parser
-        // should isolate the command and ignore everything after.
-        assert_eq!(extract_command_name("/new keep this part"), "/new");
+        // Users sometimes type "!new keep this part"; the parser should
+        // isolate the command and ignore everything after.
+        assert_eq!(extract_command_name("!new keep this part"), "!new");
     }
 
     #[test]
     fn extract_command_name_strips_at_suffix() {
-        // MUC clients sometimes append the bot's nick: "/new@Sid"
-        assert_eq!(extract_command_name("/new@Sid"), "/new");
-        assert_eq!(extract_command_name("/help@SidBot extra"), "/help");
+        // MUC clients sometimes append the bot's nick: "!new@Sid"
+        assert_eq!(extract_command_name("!new@Sid"), "!new");
+        assert_eq!(extract_command_name("!help@SidBot extra"), "!help");
     }
 
     #[test]
