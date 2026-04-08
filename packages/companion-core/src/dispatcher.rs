@@ -49,6 +49,21 @@ pub struct BroadcastEvent {
 // ---------------------------------------------------------------------------
 
 /// Minimally parsed stream-json event from the companion subprocess.
+///
+/// Claude's `--output-format stream-json --verbose --include-partial-messages`
+/// produces a few different event shapes; we only care about a handful and
+/// let the rest fall through to a debug log:
+///
+/// - `system/init` — carries the claude session id we persist for resume
+/// - `stream_event` wrapping a `content_block_delta` with `text_delta` —
+///   token-level streaming. The actual delta lives at `event.delta.text`,
+///   so we keep the inner blob as a raw `serde_json::Value` and navigate
+///   it in the handler. (Defining a typed schema for every inner event
+///   shape would be a lot of code for one read site.)
+/// - `assistant` — the legacy aggregated message, used as a fallback when
+///   partial deltas are unavailable (e.g. mock fixtures in tests).
+/// - `result/success` — canonical final text and turn complete
+/// - `result/error` — turn failed
 #[derive(serde::Deserialize)]
 struct StreamEvent {
     #[serde(rename = "type")]
@@ -59,6 +74,8 @@ struct StreamEvent {
     session_id: Option<String>,
     #[serde(default)]
     message: Option<AssistantMessage>,
+    #[serde(default)]
+    event: Option<serde_json::Value>,
     #[serde(default)]
     result: Option<String>,
     #[serde(default)]
@@ -215,7 +232,20 @@ impl Dispatcher {
         let mut cmd = Command::new(companion_cmd);
         cmd.arg("--output-format")
             .arg("stream-json")
-            .arg("--verbose");
+            .arg("--verbose")
+            // --include-partial-messages turns claude's stream into
+            // token-level deltas (`stream_event` envelopes wrapping
+            // `content_block_delta` / `text_delta`). Without this flag,
+            // stream-json only emits one `assistant` event per complete
+            // model message — fine for tool-use turns, useless for pure
+            // text turns where the user sees nothing until generation
+            // ends. The XEP-0308 streaming corrections in
+            // `channels::xmpp::stream_single_message` are designed
+            // around this delta stream; without this flag, every
+            // pure-text turn produces exactly one chunk and zero
+            // visible streaming. See dispatcher's stream_event handler
+            // below for how the deltas are unwrapped.
+            .arg("--include-partial-messages");
         if let Some(ref resume_id) = claude_session_id {
             cmd.arg("--resume").arg(resume_id);
         }
@@ -251,6 +281,13 @@ impl Dispatcher {
 
         let mut full_response = String::new();
         let mut captured_session_id = false;
+        // Set true once we've emitted a TextChunk from a `content_block_delta`
+        // (i.e. partial-message streaming is working). Used to suppress the
+        // legacy `assistant` event's text emission so the same response
+        // doesn't get streamed AND re-emitted as one big chunk at message
+        // end. Stays false in tests using the mock fixture (which never
+        // emits stream_events) so the legacy path keeps working there.
+        let mut seen_partial_text = false;
         let start = std::time::Instant::now();
 
         // Helper: send event to the caller's channel and the broadcast.
@@ -291,7 +328,56 @@ impl Dispatcher {
                         }
                     }
                 }
+                ("stream_event", _) => {
+                    // Token-level partial-message stream. We unwrap one
+                    // shape: content_block_delta carrying a text_delta.
+                    // Everything else (message_start, content_block_start,
+                    // message_delta, message_stop, ...) is ignored — we
+                    // only need the text deltas to drive XEP-0308
+                    // streaming corrections downstream.
+                    let inner = match event.event.as_ref() {
+                        Some(v) => v,
+                        None => continue,
+                    };
+                    if inner.get("type").and_then(|t| t.as_str()) != Some("content_block_delta") {
+                        continue;
+                    }
+                    let delta = match inner.get("delta") {
+                        Some(d) => d,
+                        None => continue,
+                    };
+                    if delta.get("type").and_then(|t| t.as_str()) != Some("text_delta") {
+                        continue;
+                    }
+                    let text = match delta.get("text").and_then(|t| t.as_str()) {
+                        Some(s) => s.to_string(),
+                        None => continue,
+                    };
+                    if text.is_empty() {
+                        continue;
+                    }
+                    seen_partial_text = true;
+                    full_response.push_str(&text);
+                    if emit(&tx, &broadcast_tx, &req.surface_id, &req.conversation_id, TurnEvent::TextChunk(text)).is_err() {
+                        info!("turn cancelled by surface, killing subprocess");
+                        let _ = child.kill().await;
+                        return;
+                    }
+                }
                 ("assistant", _) => {
+                    // Legacy aggregated-message path. With
+                    // --include-partial-messages enabled in production,
+                    // every text response we'd emit here has already
+                    // been streamed via content_block_delta events
+                    // above — re-emitting it would duplicate the body.
+                    // Skip text emission once we've seen any partial
+                    // delta. The mock fixture in tests doesn't emit
+                    // stream_events, so seen_partial_text stays false
+                    // and the legacy emission keeps the test suite
+                    // working unchanged.
+                    if seen_partial_text {
+                        continue;
+                    }
                     if let Some(msg) = event.message {
                         for block in msg.content {
                             if let Some(text) = block.text {
@@ -501,5 +587,44 @@ mod tests {
 
         assert!(events1.iter().any(|e| matches!(e, TurnEvent::Complete(_))));
         assert!(events2.iter().any(|e| matches!(e, TurnEvent::Complete(_))));
+    }
+
+    #[tokio::test]
+    async fn partial_messages_emit_token_chunks_and_dedupe_legacy_assistant() {
+        // Drives the `partial` mock mode, which produces three text deltas
+        // wrapped in stream_event/content_block_delta envelopes followed by
+        // the legacy `assistant` aggregate. The dispatcher must:
+        //   1. Emit one TextChunk per delta (in order)
+        //   2. SUPPRESS the legacy assistant event's text emission since
+        //      `seen_partial_text` is now true (otherwise the response
+        //      would arrive twice — once streamed, once aggregated)
+        //   3. Emit the canonical Complete from result/success
+        //
+        // This is the regression guard for the dispatcher fix that finally
+        // makes channel-xmpp Phase 4.2 streaming actually visible to users.
+        if !mock_available() { return; }
+        let dispatcher = mock_dispatcher("partial");
+        let rx = dispatcher.dispatch(make_request("dbus", "conv-partial", "stream please")).await;
+        let events = collect_events(rx).await;
+
+        let chunks: Vec<_> = events
+            .iter()
+            .filter_map(|e| match e {
+                TurnEvent::TextChunk(t) => Some(t.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            chunks,
+            vec!["Hello ", "streaming ", "world"],
+            "expected token-level chunks from content_block_delta deltas \
+             with no legacy-assistant duplication"
+        );
+
+        let complete = events.iter().find_map(|e| match e {
+            TurnEvent::Complete(t) => Some(t.as_str()),
+            _ => None,
+        });
+        assert_eq!(complete, Some("Hello streaming world"));
     }
 }

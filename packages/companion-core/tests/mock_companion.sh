@@ -3,10 +3,14 @@
 # Emits canned stream-json output that mimics real claude behavior.
 #
 # Modes (set via MOCK_MODE env var):
-#   normal   — init + assistant + result/success (default)
+#   normal   — legacy: init + assistant + result/success (default)
 #   error    — init + result/error
 #   crash    — exits non-zero with no stream-json
 #   slow     — like normal but sleeps 2s before result (for cancellation tests)
+#   partial  — init + stream_event/content_block_delta deltas + the legacy
+#              assistant event (which the dispatcher must dedupe against the
+#              streamed deltas) + result/success. Mimics real claude with
+#              --include-partial-messages.
 
 MODE="${MOCK_MODE:-normal}"
 SESSION_ID="${MOCK_SESSION_ID:-deadbeef-1234-5678-9abc-def012345678}"
@@ -30,5 +34,18 @@ case "$MODE" in
     echo '{"type":"assistant","message":{"content":[{"text":"thinking..."}]}}'
     sleep 2
     echo '{"type":"result","subtype":"success","result":"thinking..."}'
+    ;;
+  partial)
+    echo '{"type":"system","subtype":"init","session_id":"'"$SESSION_ID"'","model":"claude-sonnet-4-20250514"}'
+    echo '{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_test","type":"message","role":"assistant","content":[]}}}'
+    echo '{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}'
+    echo '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello "}}}'
+    echo '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"streaming "}}}'
+    echo '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"world"}}}'
+    echo '{"type":"assistant","message":{"content":[{"text":"Hello streaming world"}]}}'
+    echo '{"type":"stream_event","event":{"type":"content_block_stop","index":0}}'
+    echo '{"type":"stream_event","event":{"type":"message_stop"}}'
+    echo '{"type":"rate_limit_event","rate_limit_info":{"status":"allowed"}}'
+    echo '{"type":"result","subtype":"success","result":"Hello streaming world"}'
     ;;
 esac
