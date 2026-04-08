@@ -95,42 +95,11 @@ impl TelegramConfig {
 /// Telegram's maximum message length.
 const TELEGRAM_MAX_LEN: usize = 4096;
 
-/// Split a long message into chunks that fit within Telegram's 4096-char limit.
-/// Tries to break at paragraph boundaries, then sentence boundaries, then word
-/// boundaries — never mid-word if avoidable.
+/// Split a long message into chunks that fit within Telegram's 4096-char
+/// limit. Thin wrapper around the shared [`super::util::split_message`] —
+/// the algorithm lives there so xmpp can reuse it with a different cap.
 pub fn split_message(text: &str) -> Vec<String> {
-    if text.len() <= TELEGRAM_MAX_LEN {
-        return vec![text.to_string()];
-    }
-
-    let mut chunks = Vec::new();
-    let mut remaining = text;
-
-    while !remaining.is_empty() {
-        if remaining.len() <= TELEGRAM_MAX_LEN {
-            chunks.push(remaining.to_string());
-            break;
-        }
-
-        let slice = &remaining[..TELEGRAM_MAX_LEN];
-
-        // Try paragraph break.
-        let split_at = slice.rfind("\n\n")
-            // Try line break.
-            .or_else(|| slice.rfind('\n'))
-            // Try sentence end.
-            .or_else(|| slice.rfind(". ").map(|i| i + 1))
-            // Try word boundary.
-            .or_else(|| slice.rfind(' '))
-            // Last resort: hard cut.
-            .unwrap_or(TELEGRAM_MAX_LEN);
-
-        let (chunk, rest) = remaining.split_at(split_at);
-        chunks.push(chunk.to_string());
-        remaining = rest.trim_start();
-    }
-
-    chunks
+    super::util::split_message(text, TELEGRAM_MAX_LEN)
 }
 
 // ---------------------------------------------------------------------------

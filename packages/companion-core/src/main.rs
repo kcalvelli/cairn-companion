@@ -1,8 +1,8 @@
+mod channels;
 mod dbus;
 mod dispatcher;
 mod gateway;
 mod store;
-mod telegram;
 
 use std::sync::Arc;
 
@@ -101,7 +101,7 @@ async fn main() {
 
     // 5b. Start the Telegram channel adapter if enabled via environment.
     let telegram_shutdown = Arc::new(tokio::sync::Notify::new());
-    let telegram_handle = if let Some(config) = telegram::TelegramConfig::from_env() {
+    let telegram_handle = if let Some(config) = channels::telegram::TelegramConfig::from_env() {
         info!(
             allowed_users = config.allowed_users.len(),
             mention_only = config.mention_only,
@@ -111,7 +111,7 @@ async fn main() {
         let notify = telegram_shutdown.clone();
         let tg_dispatcher = dispatcher.clone();
         Some(tokio::spawn(async move {
-            telegram::serve(tg_dispatcher, config, notify).await;
+            channels::telegram::serve(tg_dispatcher, config, notify).await;
         }))
     } else {
         info!("Telegram adapter disabled (COMPANION_TELEGRAM_ENABLE != 1)");
