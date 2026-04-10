@@ -151,6 +151,25 @@ in
           local fork or want to pin a specific build.
         '';
       };
+
+      mcpGatewayPackage = lib.mkOption {
+        type = lib.types.nullOr lib.types.package;
+        default = pkgs.mcp-gateway or null;
+        defaultText = lib.literalExpression "pkgs.mcp-gateway or null";
+        description = ''
+          The mcp-gateway package providing the `mcp-gw` CLI. The daemon
+          calls `mcp-gw --json list` once at startup to build the
+          Anonymous permission deny list from the live gateway tool
+          registry, so mcp-gw must be on the systemd unit's PATH.
+
+          Defaults to `pkgs.mcp-gateway` if available in the caller's
+          nixpkgs (e.g. via the axios distro overlay). When using
+          axios-companion without the axios distro, set this explicitly:
+
+            services.axios-companion.daemon.mcpGatewayPackage =
+              inputs.mcp-gateway.packages.''${pkgs.system}.default;
+        '';
+      };
     };
 
     cli = {
@@ -400,6 +419,21 @@ in
           assertion = cfg.channels.xmpp.enable -> cfg.daemon.enable;
           message = "services.axios-companion.channels.xmpp requires daemon.enable — the adapter runs inside the daemon";
         }
+        {
+          assertion = cfg.daemon.enable -> cfg.daemon.mcpGatewayPackage != null;
+          message = ''
+            services.axios-companion.daemon.enable requires daemon.mcpGatewayPackage
+            to be set. The daemon shells out to `mcp-gw --json list` once at
+            startup to build the Anonymous channel permission deny list, and
+            refuses to start if it can't find the binary.
+
+            If you use axios's nixpkgs overlay, pkgs.mcp-gateway is available
+            and the default handles it. Otherwise set:
+
+              services.axios-companion.daemon.mcpGatewayPackage =
+                inputs.mcp-gateway.packages.''${pkgs.system}.default;
+          '';
+        }
       ];
 
       # When the CLI is active it owns the `companion` name on the user's
@@ -431,7 +465,11 @@ in
           TimeoutStopSec = 130;
           Environment = [
             "XDG_DATA_HOME=${config.xdg.dataHome}"
-            "PATH=${cfg.package}/bin:${cfg.daemon.package}/bin:/run/current-system/sw/bin"
+            # mcp-gw (from mcpGatewayPackage) is on PATH so companion-core
+            # can shell out to `mcp-gw --json list` at startup to build
+            # the Anonymous deny list. The assertion above guarantees
+            # mcpGatewayPackage is set whenever daemon.enable is true.
+            "PATH=${cfg.package}/bin:${cfg.daemon.package}/bin:${cfg.daemon.mcpGatewayPackage}/bin:/run/current-system/sw/bin"
           ] ++ lib.optionals cfg.gateway.openai.enable [
             "COMPANION_GATEWAY_ENABLE=1"
             "COMPANION_GATEWAY_PORT=${toString cfg.gateway.openai.port}"
