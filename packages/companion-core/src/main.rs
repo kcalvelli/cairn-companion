@@ -58,11 +58,36 @@ async fn main() {
         }
     };
 
-    // 3. Initialize the dispatcher.
-    let dispatcher = Arc::new(dispatcher::Dispatcher::new(store));
+    // 3. Build the Anonymous --settings deny list by querying the live
+    //    mcp-gateway tool registry. This is the dispatcher's only
+    //    runtime knowledge of the gateway tool set — adding a new MCP
+    //    server picks up automatically on the next daemon restart.
+    //
+    //    Fallback policy: if the gateway is unreachable or returns
+    //    something unparseable, REFUSE TO START. Serving anonymous
+    //    channel turns with a stale or missing deny list could leak
+    //    dangerous tools, and a quiet partial degradation is worse
+    //    than a loud restart loop. Systemd will retry per the unit's
+    //    Restart=on-failure.
+    let anonymous_settings = match dispatcher::build_anonymous_settings_json().await {
+        Ok(json) => {
+            info!("anonymous deny list built from live gateway");
+            json
+        }
+        Err(e) => {
+            error!(
+                error = %e,
+                "failed to build anonymous deny list — refusing to start"
+            );
+            std::process::exit(1);
+        }
+    };
+
+    // 4. Initialize the dispatcher.
+    let dispatcher = Arc::new(dispatcher::Dispatcher::new(store, anonymous_settings));
     info!("dispatcher ready");
 
-    // 4. Acquire the D-Bus well-known name on the session bus.
+    // 5. Acquire the D-Bus well-known name on the session bus.
     let _connection = match dbus::serve(dispatcher.clone()).await {
         Ok(c) => c,
         Err(e) => {
@@ -71,7 +96,7 @@ async fn main() {
         }
     };
 
-    // 5. Start the OpenAI gateway if enabled via environment.
+    // 6. Start the OpenAI gateway if enabled via environment.
     let shutdown_notify = Arc::new(tokio::sync::Notify::new());
     let gateway_handle = if let Some(config) = gateway::types::GatewayConfig::from_env() {
         info!(
@@ -99,7 +124,7 @@ async fn main() {
         None
     };
 
-    // 5b. Start the Telegram channel adapter if enabled via environment.
+    // 6b. Start the Telegram channel adapter if enabled via environment.
     let telegram_shutdown = Arc::new(tokio::sync::Notify::new());
     let telegram_handle = if let Some(config) = channels::telegram::TelegramConfig::from_env() {
         info!(
@@ -118,7 +143,7 @@ async fn main() {
         None
     };
 
-    // 5c. Start the XMPP channel adapter if enabled via environment.
+    // 6c. Start the XMPP channel adapter if enabled via environment.
     // Phase 2 lands the connect/auth/presence/reconnect path; the dispatcher
     // wiring (DM + MUC handling) lands in Phase 3+ of channel-xmpp.
     let xmpp_shutdown = Arc::new(tokio::sync::Notify::new());
@@ -143,14 +168,14 @@ async fn main() {
         None
     };
 
-    // 6. Signal readiness via sd_notify(READY=1).
+    // 7. Signal readiness via sd_notify(READY=1).
     if let Err(e) = sd_notify::notify(false, &[sd_notify::NotifyState::Ready]) {
         warn!(%e, "sd_notify READY=1 failed (not running under systemd?)");
     } else {
         info!("signaled readiness to systemd");
     }
 
-    // 7. Enter the event loop — wait for shutdown signals.
+    // 8. Enter the event loop — wait for shutdown signals.
     use tokio::signal::unix::{signal, SignalKind};
 
     let mut sigterm = signal(SignalKind::terminate()).expect("failed to register SIGTERM handler");

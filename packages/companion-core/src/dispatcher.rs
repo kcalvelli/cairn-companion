@@ -54,57 +54,218 @@ pub struct TurnRequest {
 }
 
 // ---------------------------------------------------------------------------
-// Per-trust-tier Claude Code settings JSON
+// Per-trust-tier permission strategy
 // ---------------------------------------------------------------------------
 //
-// Both literals are passed inline via `--settings '<json>'` on the
-// companion subprocess argv (see run_turn). The shape matches
-// `~/.claude/settings.json`'s `permissions.{allow,deny}`. Inline settings
-// are MERGED with the user-level settings file, NOT replaced — verified
-// 2026-04-09 against claude-code 2.1.92.
+// Owner trust = Keith. The daemon uses `--permission-mode bypassPermissions`
+// for owner turns and passes NO `--settings` flag. claude-code allows
+// every tool by default in this mode, so any new MCP server added to
+// the gateway becomes available to owner channels with zero dispatcher
+// changes. The only thing the daemon needs to know is that the caller
+// is an owner.
 //
-// Owner uses an `allow` list because the merge is desirable: Keith's
-// own interactive allow rules + the curated MCP set = full owner
-// toolkit, no Keith intervention needed.
-//
-// Anonymous uses a `deny` list, NOT `allow`-with-empty, because the
-// merge would cause Keith's interactive allow rules to leak through.
+// Anonymous trust = anyone reaching the daemon over an unauthenticated
+// surface (MUC, openai-gateway). The daemon uses `--permission-mode
+// dontAsk` plus `--settings '<json>'` carrying an enumerated deny list.
 // `permissions.deny` strips tools from the model's `tools[]` array
-// entirely (verified live: the model can't even ToolSearch for a
-// denied tool), so anonymous turns never produce hallucinated
-// tool-result text.
+// entirely (verified 2026-04-09 against claude-code 2.1.92 — the model
+// can't even ToolSearch for a denied tool), so anonymous turns can't
+// produce hallucinated tool-result text either.
 //
-// Wildcards (`*`, `mcp__*`) do NOT work in either list — verified
-// against claude-code 2.1.92. Every tool name must be enumerated.
-// New built-in or MCP tools added by claude-code or by the daemon's
-// `--mcp-config` need to be added to ANONYMOUS_DENY below or they
-// will silently start being allowed in MUC / openai-gateway turns.
-
-const OWNER_SETTINGS_JSON: &str = r#"{"permissions":{"allow":["mcp__axios-ai-mail__*","mcp__mcp-dav__*","mcp__sentinel__*"]}}"#;
-
-// Enumerated deny list for the Anonymous tier. Includes:
-//   - all built-in claude-code tools (Bash, Edit, Read, ...) observed
-//     in the init event of a non-bare claude invocation
-//   - all deferred tools that could create state, spawn agents, or
-//     cost money (Cron*, Task, Worktree*, RemoteTrigger, Skill)
-//   - every MCP tool the daemon's --mcp-config could plausibly load
-//     (axios-ai-mail, mcp-dav, sentinel) plus the always-loaded
-//     claude_ai_Gmail / claude_ai_Google_Calendar OAuth flows
+// The deny list is BUILT DYNAMICALLY at daemon startup by querying the
+// live mcp-gateway tool registry via `mcp-gw --json list`. Adding a new
+// MCP server to the gateway picks up automatically on the next daemon
+// restart — its tools land in the deny list unless its server id is
+// in ANONYMOUS_PUBLIC_SERVERS below. To allow a freshly-added server
+// for anonymous turns, add ONE entry to that const and rebuild. To
+// keep one denied (the default), do nothing.
 //
-// Tools intentionally NOT denied (because they're UI/state-only and
-// can't affect the daemon or the outside world): AskUserQuestion,
-// EnterPlanMode, ExitPlanMode, TodoWrite, TaskOutput, TaskStop,
-// ToolSearch (denying ToolSearch breaks the model's ability to
-// discover tools, but since everything else is denied that's moot).
-// ToolSearch is left in only because the model uses it harmlessly
-// when it can't find a tool — see the live pre-flight transcript.
-const ANONYMOUS_SETTINGS_JSON: &str = r#"{"permissions":{"allow":[],"deny":["Bash","Edit","Write","Read","Glob","Grep","WebFetch","WebSearch","NotebookEdit","Task","Skill","RemoteTrigger","CronCreate","CronDelete","CronList","EnterWorktree","ExitWorktree","mcp__axios-ai-mail__bulk_update_tags","mcp__axios-ai-mail__compose_email","mcp__axios-ai-mail__delete_by_filter","mcp__axios-ai-mail__delete_email","mcp__axios-ai-mail__get_unread_count","mcp__axios-ai-mail__list_accounts","mcp__axios-ai-mail__list_tags","mcp__axios-ai-mail__mark_read","mcp__axios-ai-mail__read_email","mcp__axios-ai-mail__reply_to_email","mcp__axios-ai-mail__restore_email","mcp__axios-ai-mail__search_emails","mcp__axios-ai-mail__send_email","mcp__axios-ai-mail__update_tags","mcp__mcp-dav__create_contact","mcp__mcp-dav__create_event","mcp__mcp-dav__delete_contact","mcp__mcp-dav__get_contact","mcp__mcp-dav__get_free_busy","mcp__mcp-dav__list_contacts","mcp__mcp-dav__list_events","mcp__mcp-dav__search_contacts","mcp__mcp-dav__search_events","mcp__mcp-dav__update_contact","mcp__sentinel__check_fleet_health","mcp__sentinel__host_disk","mcp__sentinel__host_gpu","mcp__sentinel__host_temperatures","mcp__sentinel__list_hosts","mcp__sentinel__query_host","mcp__sentinel__reboot_host","mcp__sentinel__restart_service","mcp__sentinel__system_status","mcp__sentinel__view_logs","mcp__claude_ai_Gmail__authenticate","mcp__claude_ai_Google_Calendar__authenticate"]}}"#;
+// Wildcards (`*`, `mcp__*`, `mcp__server__*`) do NOT work in either
+// allow or deny list — verified against claude-code 2.1.92. Every tool
+// name must be enumerated, which is exactly what the dynamic builder
+// produces.
 
-fn settings_json_for(trust: TrustLevel) -> &'static str {
-    match trust {
-        TrustLevel::Owner => OWNER_SETTINGS_JSON,
-        TrustLevel::Anonymous => ANONYMOUS_SETTINGS_JSON,
+/// Built-in claude-code tools and deferred tools that anonymous turns
+/// must never reach. Finite, hardcoded — these don't change with the
+/// gateway tool set.
+const BUILTIN_DENY_TOOLS: &[&str] = &[
+    "Bash", "Edit", "Write", "Read", "Glob", "Grep",
+    "WebFetch", "WebSearch", "NotebookEdit",
+    "Task", "Skill", "RemoteTrigger",
+    "CronCreate", "CronDelete", "CronList",
+    "EnterWorktree", "ExitWorktree",
+    // OAuth flows always loaded by claude-code regardless of --mcp-config
+    "mcp__claude_ai_Gmail__authenticate",
+    "mcp__claude_ai_Google_Calendar__authenticate",
+];
+
+/// Legacy stdio-prefix MCP tool names — the form claude-code generates
+/// when an MCP server runs as a stdio child of the claude subprocess
+/// (not via the gateway HTTP transport). The daemon today runs on mini
+/// where everything goes through the gateway, but these stay enumerated
+/// as cheap insurance against the daemon ever moving to a server-role
+/// host like edge. Finite, hardcoded — adding a new server to the
+/// gateway does NOT add to this list.
+const LEGACY_STDIO_DENY: &[&str] = &[
+    "mcp__axios-ai-mail__bulk_update_tags",
+    "mcp__axios-ai-mail__compose_email",
+    "mcp__axios-ai-mail__delete_by_filter",
+    "mcp__axios-ai-mail__delete_email",
+    "mcp__axios-ai-mail__get_unread_count",
+    "mcp__axios-ai-mail__list_accounts",
+    "mcp__axios-ai-mail__list_tags",
+    "mcp__axios-ai-mail__mark_read",
+    "mcp__axios-ai-mail__read_email",
+    "mcp__axios-ai-mail__reply_to_email",
+    "mcp__axios-ai-mail__restore_email",
+    "mcp__axios-ai-mail__search_emails",
+    "mcp__axios-ai-mail__send_email",
+    "mcp__axios-ai-mail__update_tags",
+    "mcp__mcp-dav__create_contact",
+    "mcp__mcp-dav__create_event",
+    "mcp__mcp-dav__delete_contact",
+    "mcp__mcp-dav__get_contact",
+    "mcp__mcp-dav__get_free_busy",
+    "mcp__mcp-dav__list_contacts",
+    "mcp__mcp-dav__list_events",
+    "mcp__mcp-dav__search_contacts",
+    "mcp__mcp-dav__search_events",
+    "mcp__mcp-dav__update_contact",
+    "mcp__sentinel__check_fleet_health",
+    "mcp__sentinel__host_disk",
+    "mcp__sentinel__host_gpu",
+    "mcp__sentinel__host_temperatures",
+    "mcp__sentinel__list_hosts",
+    "mcp__sentinel__query_host",
+    "mcp__sentinel__reboot_host",
+    "mcp__sentinel__restart_service",
+    "mcp__sentinel__system_status",
+    "mcp__sentinel__view_logs",
+];
+
+/// Gateway-registered MCP servers whose tools ARE allowed for anonymous
+/// channel turns. Anything not listed here gets every tool denied. Add
+/// a server name only after auditing what its tools can do — these are
+/// the verbs unauthenticated MUC / openai-gateway callers can reach.
+///
+/// Default policy: deny. The list below is the audited exceptions.
+const ANONYMOUS_PUBLIC_SERVERS: &[&str] = &["github", "brave-search"];
+
+/// Test fixture used by the cfg(test) `with_command` constructor so
+/// tests don't need a real gateway running. Mirrors the production
+/// shape but with a tiny enumerated deny list.
+#[cfg(test)]
+const TEST_ANONYMOUS_SETTINGS_JSON: &str = r#"{"permissions":{"allow":[],"deny":["Bash","Edit","Read","mcp__axios-mcp-gateway__sentinel__reboot_host"]}}"#;
+
+/// One server entry from `mcp-gw --json list` output.
+#[derive(Debug, serde::Deserialize)]
+struct GatewayServer {
+    id: String,
+    enabled: bool,
+    tools: Vec<String>,
+}
+
+/// Errors from `build_anonymous_settings_json`. Per the dispatcher's
+/// fallback policy these are fatal at daemon startup — the daemon
+/// refuses to start rather than serve anonymous turns with a
+/// degraded/missing deny list.
+#[derive(Debug)]
+pub enum AnonymousSettingsError {
+    SpawnFailed(std::io::Error),
+    McpGwFailed { stderr: String },
+    ParseFailed(serde_json::Error),
+}
+
+impl std::fmt::Display for AnonymousSettingsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SpawnFailed(e) => write!(f, "failed to spawn `mcp-gw --json list`: {e}"),
+            Self::McpGwFailed { stderr } => write!(f, "`mcp-gw --json list` failed: {stderr}"),
+            Self::ParseFailed(e) => write!(f, "failed to parse mcp-gw output: {e}"),
+        }
     }
+}
+
+impl std::error::Error for AnonymousSettingsError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::SpawnFailed(e) => Some(e),
+            Self::ParseFailed(e) => Some(e),
+            Self::McpGwFailed { .. } => None,
+        }
+    }
+}
+
+/// Build the Anonymous --settings JSON literal by querying the live
+/// mcp-gateway tool registry via `mcp-gw --json list` and applying the
+/// policy in `build_deny_json_from_servers`. Returns Err if mcp-gw is
+/// unreachable, exits non-zero, or returns invalid JSON. The daemon
+/// treats all three as fatal at startup.
+pub async fn build_anonymous_settings_json() -> Result<String, AnonymousSettingsError> {
+    let output = tokio::process::Command::new("mcp-gw")
+        .args(["--json", "list"])
+        .output()
+        .await
+        .map_err(AnonymousSettingsError::SpawnFailed)?;
+
+    if !output.status.success() {
+        return Err(AnonymousSettingsError::McpGwFailed {
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        });
+    }
+
+    let servers: Vec<GatewayServer> =
+        serde_json::from_slice(&output.stdout).map_err(AnonymousSettingsError::ParseFailed)?;
+
+    Ok(build_deny_json_from_servers(&servers))
+}
+
+/// Pure policy function — given a snapshot of the gateway server set,
+/// produce the Anonymous --settings JSON literal. Split out from the
+/// async builder so unit tests can exercise the policy logic without
+/// spawning mcp-gw.
+///
+/// Deny list is the union of:
+///   - BUILTIN_DENY_TOOLS — finite, hardcoded
+///   - LEGACY_STDIO_DENY  — finite, hardcoded
+///   - every gateway-prefixed tool whose server is enabled AND whose
+///     server_id is NOT in ANONYMOUS_PUBLIC_SERVERS
+fn build_deny_json_from_servers(servers: &[GatewayServer]) -> String {
+    let mut deny: Vec<String> = Vec::with_capacity(
+        BUILTIN_DENY_TOOLS.len()
+            + LEGACY_STDIO_DENY.len()
+            + servers.iter().map(|s| s.tools.len()).sum::<usize>(),
+    );
+
+    for t in BUILTIN_DENY_TOOLS {
+        deny.push((*t).to_string());
+    }
+    for t in LEGACY_STDIO_DENY {
+        deny.push((*t).to_string());
+    }
+
+    for server in servers {
+        if !server.enabled {
+            continue;
+        }
+        if ANONYMOUS_PUBLIC_SERVERS.contains(&server.id.as_str()) {
+            continue;
+        }
+        for tool in &server.tools {
+            deny.push(format!(
+                "mcp__axios-mcp-gateway__{}__{}",
+                server.id, tool
+            ));
+        }
+    }
+
+    serde_json::json!({
+        "permissions": {
+            "allow": [],
+            "deny": deny,
+        }
+    })
+    .to_string()
 }
 
 /// Events emitted during a turn.
@@ -196,10 +357,21 @@ pub struct Dispatcher {
     subprocess_env: HashMap<String, String>,
     /// Broadcast channel for all turn events across all surfaces.
     broadcast_tx: broadcast::Sender<BroadcastEvent>,
+    /// `--settings` JSON literal passed to the companion subprocess for
+    /// Anonymous-tier turns. Built once at daemon startup by querying
+    /// the live mcp-gateway tool registry. Owner-tier turns use
+    /// `--permission-mode bypassPermissions` instead and don't read
+    /// this field.
+    anonymous_settings_json: Arc<str>,
 }
 
 impl Dispatcher {
-    pub fn new(store: SessionStore) -> Self {
+    /// Construct a production dispatcher. The caller is responsible
+    /// for building the anonymous deny list (typically via
+    /// `build_anonymous_settings_json` at startup) and handing it in.
+    /// Failure to build the deny list is a fatal startup error per
+    /// the dispatcher's fallback policy — see main.rs.
+    pub fn new(store: SessionStore, anonymous_settings_json: String) -> Self {
         let (broadcast_tx, _) = broadcast::channel(256);
         Self {
             store: Arc::new(Mutex::new(store)),
@@ -207,6 +379,7 @@ impl Dispatcher {
             companion_cmd: "companion".into(),
             subprocess_env: HashMap::new(),
             broadcast_tx,
+            anonymous_settings_json: Arc::from(anonymous_settings_json.as_str()),
         }
     }
 
@@ -221,6 +394,8 @@ impl Dispatcher {
     }
 
     /// Create a dispatcher with a custom companion command and env vars (for tests).
+    /// Tests use a small hardcoded anonymous deny list so they don't need
+    /// a real mcp-gateway running during `cargo test`.
     #[cfg(test)]
     pub fn with_command(
         store: SessionStore,
@@ -234,6 +409,7 @@ impl Dispatcher {
             companion_cmd: cmd.into(),
             subprocess_env: env,
             broadcast_tx,
+            anonymous_settings_json: Arc::from(TEST_ANONYMOUS_SETTINGS_JSON),
         }
     }
 
@@ -258,11 +434,12 @@ impl Dispatcher {
         let cmd = self.companion_cmd.clone();
         let env = self.subprocess_env.clone();
         let broadcast_tx = self.broadcast_tx.clone();
+        let anon_settings = self.anonymous_settings_json.clone();
 
         tokio::spawn(async move {
             // Serialize turns within a session.
             let _guard = lock.lock().await;
-            Self::run_turn(store, req, tx, broadcast_tx, &cmd, &env).await;
+            Self::run_turn(store, req, tx, broadcast_tx, &cmd, &env, &anon_settings).await;
         });
 
         rx
@@ -275,6 +452,7 @@ impl Dispatcher {
         broadcast_tx: broadcast::Sender<BroadcastEvent>,
         companion_cmd: &str,
         extra_env: &HashMap<String, String>,
+        anonymous_settings_json: &str,
     ) {
         // Resolve (or create) the session.
         let (session_id, claude_session_id) = {
@@ -314,13 +492,25 @@ impl Dispatcher {
         // status 1. Verified live against mini's claude-code 2.1.92 in
         // 2026-04-08 — see channel-xmpp Phase 5 live MUC test for context.
         //
-        // The `--permission-mode dontAsk` + `--settings` pair MUST sit
-        // between `--include-partial-messages` and `--resume` so that
-        // `-p --` stays terminal. dontAsk + per-tier settings is what
-        // lets channel-delivered turns use MCP tools (Owner) or refuse
-        // them visibly (Anonymous) instead of hanging on a permission
-        // prompt that nobody can answer. See `TrustLevel` and
-        // `settings_json_for` above for the trust model.
+        // The `--permission-mode` (and, for Anonymous, `--settings`)
+        // flags MUST sit between `--include-partial-messages` and
+        // `--resume` so that `-p --` stays terminal. The exact flags
+        // depend on the trust tier:
+        //
+        //   Owner     → bypassPermissions, no --settings
+        //               (claude allows every tool by default; new MCP
+        //               servers added to the gateway are picked up
+        //               automatically with zero dispatcher changes)
+        //
+        //   Anonymous → dontAsk + --settings <deny-list-json>
+        //               (claude denies anything not allowed; the deny
+        //               list strips dangerous tools from tools[] so the
+        //               model can't even hallucinate calling them)
+        //
+        // The Anonymous deny list is built once at daemon startup by
+        // querying the live mcp-gateway tool registry — see
+        // `build_anonymous_settings_json` and the policy constants at
+        // the top of this file.
         //
         // Note: `companion` resolves via the daemon's systemd PATH
         // override to a writeShellApplication wrapper (see
@@ -344,18 +534,29 @@ impl Dispatcher {
             // pure-text turn produces exactly one chunk and zero
             // visible streaming. See dispatcher's stream_event handler
             // below for how the deltas are unwrapped.
-            .arg("--include-partial-messages")
-            // --permission-mode dontAsk: never prompt the user for tool
-            // approval (there is no user at this subprocess); instead
-            // either silently allow per the merged settings or deny with
-            // a tool_result error. --settings: per-tier inline JSON that
-            // either adds the curated MCP allow list (Owner) or denies
-            // every dangerous tool by name (Anonymous). See the constants
-            // and `settings_json_for` near the top of this file.
-            .arg("--permission-mode")
-            .arg("dontAsk")
-            .arg("--settings")
-            .arg(settings_json_for(req.trust));
+            .arg("--include-partial-messages");
+
+        match req.trust {
+            TrustLevel::Owner => {
+                // Owner == fully trusted (Keith). bypassPermissions
+                // allows every tool with no enumeration, so adding new
+                // MCP servers to the gateway "just works" for owner
+                // channels.
+                cmd.arg("--permission-mode").arg("bypassPermissions");
+            }
+            TrustLevel::Anonymous => {
+                // Anonymous == anyone reaching the daemon over an
+                // unauthenticated surface. dontAsk + an enumerated
+                // deny list strips dangerous tools from tools[] so
+                // the model can't see them, can't ToolSearch them,
+                // can't hallucinate calling them.
+                cmd.arg("--permission-mode")
+                    .arg("dontAsk")
+                    .arg("--settings")
+                    .arg(anonymous_settings_json);
+            }
+        }
+
         if let Some(ref resume_id) = claude_session_id {
             cmd.arg("--resume").arg(resume_id);
         }
@@ -734,11 +935,48 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn passes_permission_mode_and_settings_owner() {
+    async fn owner_uses_bypass_permissions_with_no_settings() {
         if !mock_available() { return; }
         let argv = capture_dispatch_argv(TrustLevel::Owner).await;
 
-        // --permission-mode dontAsk must be present, in that order.
+        // Owner tier: --permission-mode bypassPermissions, no --settings.
+        // bypassPermissions allows every tool by default, so the
+        // dispatcher doesn't need to enumerate anything — adding new
+        // MCP servers to the gateway "just works" for owner channels.
+        let mode_idx = argv
+            .iter()
+            .position(|a| a == "--permission-mode")
+            .expect("--permission-mode must be in argv");
+        assert_eq!(
+            argv.get(mode_idx + 1).map(String::as_str),
+            Some("bypassPermissions"),
+            "Owner --permission-mode must be bypassPermissions"
+        );
+
+        // Critical: --settings MUST NOT be present for Owner. If a
+        // future refactor accidentally re-introduces it the merge
+        // semantics could narrow Owner's tool access.
+        assert!(
+            !argv.iter().any(|a| a == "--settings"),
+            "Owner must not pass --settings (bypassPermissions handles allow-all)"
+        );
+
+        // -p MUST stay terminal — no flag may follow it before --.
+        let p_idx = argv
+            .iter()
+            .position(|a| a == "-p")
+            .expect("-p must be in argv");
+        assert!(
+            mode_idx < p_idx,
+            "--permission-mode must precede -p so the prompt body stays terminal"
+        );
+    }
+
+    #[tokio::test]
+    async fn anonymous_uses_dont_ask_with_dynamic_deny_list() {
+        if !mock_available() { return; }
+        let argv = capture_dispatch_argv(TrustLevel::Anonymous).await;
+
         let mode_idx = argv
             .iter()
             .position(|a| a == "--permission-mode")
@@ -746,32 +984,26 @@ mod tests {
         assert_eq!(
             argv.get(mode_idx + 1).map(String::as_str),
             Some("dontAsk"),
-            "--permission-mode must be followed by dontAsk"
+            "Anonymous --permission-mode must be dontAsk"
         );
 
-        // --settings must be present and followed by the OWNER literal.
         let settings_idx = argv
             .iter()
             .position(|a| a == "--settings")
-            .expect("--settings must be in argv");
+            .expect("--settings must be in argv for Anonymous");
+        // The test fixture is what cfg(test) `with_command` injects;
+        // the production deny list is built dynamically from
+        // `mcp-gw --json list` at startup and is not exercised here.
         assert_eq!(
             argv.get(settings_idx + 1).map(String::as_str),
-            Some(OWNER_SETTINGS_JSON),
-            "--settings must carry the owner JSON literal verbatim"
+            Some(TEST_ANONYMOUS_SETTINGS_JSON),
+            "--settings must carry the anonymous JSON literal verbatim"
         );
 
-        // The owner literal must allow the curated MCP namespaces.
+        // Anonymous must DENY (not allow) the dangerous tool set.
         assert!(
-            OWNER_SETTINGS_JSON.contains("mcp__axios-ai-mail__*"),
-            "owner settings must allow axios-ai-mail MCP tools"
-        );
-        assert!(
-            OWNER_SETTINGS_JSON.contains("mcp__mcp-dav__*"),
-            "owner settings must allow mcp-dav MCP tools"
-        );
-        assert!(
-            OWNER_SETTINGS_JSON.contains("mcp__sentinel__*"),
-            "owner settings must allow sentinel MCP tools"
+            TEST_ANONYMOUS_SETTINGS_JSON.contains(r#""deny":["#),
+            "anonymous settings must use a deny list"
         );
 
         // -p MUST stay terminal — no flag may follow it before --.
@@ -789,48 +1021,67 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn passes_permission_mode_and_settings_anonymous() {
-        if !mock_available() { return; }
-        let argv = capture_dispatch_argv(TrustLevel::Anonymous).await;
+    #[test]
+    fn anonymous_builder_emits_well_formed_deny_list() {
+        // Unit test for the policy logic in build_anonymous_settings_json
+        // without the mcp-gw subprocess. We hand it a fake server set
+        // and verify the resulting JSON denies the right things.
+        let servers = vec![
+            GatewayServer {
+                id: "axios-ai-mail".into(),
+                enabled: true,
+                tools: vec!["get_unread_count".into(), "send_email".into()],
+            },
+            GatewayServer {
+                id: "github".into(), // public — must NOT appear in deny
+                enabled: true,
+                tools: vec!["create_pull_request".into()],
+            },
+            GatewayServer {
+                id: "sentinel".into(),
+                enabled: true,
+                tools: vec!["reboot_host".into()],
+            },
+            GatewayServer {
+                id: "disabled-server".into(), // disabled — must be skipped
+                enabled: false,
+                tools: vec!["dangerous_op".into()],
+            },
+        ];
 
-        let mode_idx = argv
-            .iter()
-            .position(|a| a == "--permission-mode")
-            .expect("--permission-mode must be in argv");
-        assert_eq!(
-            argv.get(mode_idx + 1).map(String::as_str),
-            Some("dontAsk"),
-            "--permission-mode must be followed by dontAsk"
-        );
+        let json = build_deny_json_from_servers(&servers);
 
-        let settings_idx = argv
-            .iter()
-            .position(|a| a == "--settings")
-            .expect("--settings must be in argv");
-        assert_eq!(
-            argv.get(settings_idx + 1).map(String::as_str),
-            Some(ANONYMOUS_SETTINGS_JSON),
-            "--settings must carry the anonymous JSON literal verbatim"
-        );
+        // Built-ins always denied
+        assert!(json.contains(r#""Bash""#));
+        assert!(json.contains(r#""Edit""#));
 
-        // Anonymous must DENY (not allow) the dangerous tool set.
+        // Legacy stdio prefix always denied
+        assert!(json.contains(r#""mcp__sentinel__reboot_host""#));
+
+        // Gateway-prefixed: dangerous servers denied
+        assert!(json.contains(r#""mcp__axios-mcp-gateway__axios-ai-mail__get_unread_count""#));
+        assert!(json.contains(r#""mcp__axios-mcp-gateway__axios-ai-mail__send_email""#));
+        assert!(json.contains(r#""mcp__axios-mcp-gateway__sentinel__reboot_host""#));
+
+        // Public servers NOT in deny list (they go through the gateway
+        // but anonymous turns can use them)
         assert!(
-            ANONYMOUS_SETTINGS_JSON.contains(r#""deny":["#),
-            "anonymous settings must use a deny list"
+            !json.contains("mcp__axios-mcp-gateway__github__create_pull_request"),
+            "github tools must NOT appear in anonymous deny list"
         );
-        for tool in &[
-            "Bash", "Edit", "Write", "Read", "WebFetch", "WebSearch",
-            "mcp__axios-ai-mail__send_email",
-            "mcp__sentinel__reboot_host",
-            "mcp__mcp-dav__delete_contact",
-        ] {
-            assert!(
-                ANONYMOUS_SETTINGS_JSON.contains(tool),
-                "anonymous deny list must include {}",
-                tool
-            );
-        }
+
+        // Disabled server tools NOT in deny list
+        assert!(
+            !json.contains("dangerous_op"),
+            "tools from disabled servers must be skipped"
+        );
+
+        // OAuth shims always denied
+        assert!(json.contains("mcp__claude_ai_Gmail__authenticate"));
+
+        // Allow list is empty (dontAsk + empty allow = deny everything
+        // claude doesn't already know about)
+        assert!(json.contains(r#""allow":[]"#));
     }
 
     #[tokio::test]
