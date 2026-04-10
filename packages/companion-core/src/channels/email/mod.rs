@@ -165,6 +165,20 @@ async fn handle_message(
     // out-of-office, vacation responders, mailing list digests, and DSNs —
     // which is how you turn one stranger's spam into a thousand-message
     // tarpit between the bot and a hapless mailserver.
+
+    // Self-address check. Defense in depth on top of the Auto-Submitted
+    // header (which we set on outbound and filter on inbound below) —
+    // some intermediate mail gateways strip headers they don't
+    // recognize, and a forged inbound claiming to be from us shouldn't
+    // get a reply either. The bot never legitimately receives mail
+    // from itself, so dropping is always correct.
+    if is_from_self(&parsed.from_address, &config.address) {
+        debug!(
+            from = %parsed.from_address,
+            "email: dropping message that claims to be from the bot itself"
+        );
+        return;
+    }
     if parsed.is_auto_submitted() {
         debug!(
             from = %parsed.from_address,
@@ -279,6 +293,59 @@ async fn send_reply(config: &EmailConfig, parsed: &ParsedMessage, reply_text: &s
 
     if let Err(e) = send::append_to_sent(config, &outbound).await {
         warn!(%e, "email: failed to APPEND to Sent folder (reply was still delivered)");
+    }
+}
+
+/// Returns true if the inbound `From:` address resolves to the bot's
+/// own configured address. Comparison is case-insensitive on the whole
+/// address — RFC 5321 says local-parts MAY be case-sensitive but in
+/// practice nobody enforces it, and treating `Bot@Example.Com` and
+/// `bot@example.com` as the same identity is what every operator
+/// actually expects.
+///
+/// `parsed_from` is expected to already be lowercased at parse time
+/// (see `parse::parse`); we lowercase `bot_address` here to match.
+fn is_from_self(parsed_from: &str, bot_address: &str) -> bool {
+    parsed_from == bot_address.to_ascii_lowercase()
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn self_address_check_matches_exact() {
+        assert!(is_from_self("bot@example.com", "bot@example.com"));
+    }
+
+    #[test]
+    fn self_address_check_is_case_insensitive_on_config() {
+        // parse::parse lowercases the inbound from_address. The config
+        // value can be in any case the operator typed it.
+        assert!(is_from_self("bot@example.com", "Bot@Example.Com"));
+        assert!(is_from_self("bot@example.com", "BOT@EXAMPLE.COM"));
+    }
+
+    #[test]
+    fn self_address_check_rejects_other_senders() {
+        assert!(!is_from_self("alice@example.com", "bot@example.com"));
+        assert!(!is_from_self("bot@other.example", "bot@example.com"));
+        // Different local-part, same domain — common in shared-domain
+        // deployments where the bot lives on the same host as humans.
+        assert!(!is_from_self("notbot@example.com", "bot@example.com"));
+    }
+
+    #[test]
+    fn self_address_check_rejects_substring_match() {
+        // The check is full-string equality, not substring. A sender
+        // with the bot's address as a suffix of its own should NOT
+        // match — that would be the kind of subtle false positive
+        // that's worth catching at test time.
+        assert!(!is_from_self("evil-bot@example.com", "bot@example.com"));
     }
 }
 
