@@ -6,6 +6,7 @@
 //! Adapters share text-manipulation helpers via [`util`]. Beyond that they
 //! are independent — telegram knows nothing about xmpp and vice versa.
 
+pub mod email;
 pub mod telegram;
 pub mod util;
 pub mod xmpp;

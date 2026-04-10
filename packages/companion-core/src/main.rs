@@ -168,6 +168,33 @@ async fn main() {
         None
     };
 
+    // 6d. Start the email channel adapter if enabled via environment.
+    // Polls IMAP for unseen mail in Sid's own inbox (genxbot@calvelli.us
+    // on the production deploy), parses, dispatches, and replies via SMTP.
+    // Conversation key is the RFC 5322 thread root Message-ID, so each
+    // mail thread gets its own Claude session.
+    let email_shutdown = Arc::new(tokio::sync::Notify::new());
+    let email_handle = if let Some(config) = channels::email::EmailConfig::from_env() {
+        info!(
+            address = %config.address,
+            imap_host = %config.imap_host,
+            imap_port = config.imap_port,
+            smtp_host = %config.smtp_host,
+            smtp_port = config.smtp_port,
+            poll_secs = config.poll_interval.as_secs(),
+            allowed_senders = config.allowed_senders.len(),
+            "starting email adapter"
+        );
+        let notify = email_shutdown.clone();
+        let email_dispatcher = dispatcher.clone();
+        Some(tokio::spawn(async move {
+            channels::email::serve(email_dispatcher, config, notify).await;
+        }))
+    } else {
+        info!("email adapter disabled (COMPANION_EMAIL_ENABLE != 1)");
+        None
+    };
+
     // 7. Signal readiness via sd_notify(READY=1).
     if let Err(e) = sd_notify::notify(false, &[sd_notify::NotifyState::Ready]) {
         warn!(%e, "sd_notify READY=1 failed (not running under systemd?)");
@@ -201,6 +228,7 @@ async fn main() {
     shutdown_notify.notify_one();
     telegram_shutdown.notify_one();
     xmpp_shutdown.notify_one();
+    email_shutdown.notify_one();
 
     if let Some(handle) = gateway_handle {
         let _ = handle.await;
@@ -209,6 +237,9 @@ async fn main() {
         let _ = handle.await;
     }
     if let Some(handle) = xmpp_handle {
+        let _ = handle.await;
+    }
+    if let Some(handle) = email_handle {
         let _ = handle.await;
     }
 

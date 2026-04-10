@@ -356,6 +356,102 @@ in
       };
     };
 
+    channels.email = {
+      enable = lib.mkEnableOption "email channel adapter inside the companion daemon";
+
+      address = lib.mkOption {
+        type = lib.types.str;
+        description = ''
+          The bot's own mail address — both the IMAP login username and
+          the outbound `From:` address. The mailbox must already exist
+          on the IMAP server; the daemon does not provision accounts.
+        '';
+        example = "bot@example.com";
+      };
+
+      displayName = lib.mkOption {
+        type = lib.types.str;
+        default = "";
+        description = ''
+          Display name for the outbound `From:` header. Empty string
+          defaults to the local part of `address`.
+        '';
+        example = "Bot";
+      };
+
+      passwordFile = lib.mkOption {
+        type = lib.types.path;
+        description = ''
+          Path to a file containing the bot's IMAP/SMTP password (one
+          line, no trailing newline). Compatible with agenix-managed
+          secrets. The same password is used for both IMAP and SMTP —
+          servers that require separate auth are not supported.
+        '';
+        example = lib.literalExpression "/run/agenix/email-bot-password";
+      };
+
+      imapHost = lib.mkOption {
+        type = lib.types.str;
+        description = ''
+          IMAP server hostname. Must serve TLS on the configured port
+          with a publicly verifiable certificate (Mozilla CA bundle).
+          Self-signed certs are not supported on the email channel —
+          use a real cert.
+        '';
+        example = "imap.example.com";
+      };
+
+      imapPort = lib.mkOption {
+        type = lib.types.port;
+        default = 993;
+        description = "IMAPS port. Default 993 covers nearly every public IMAP host.";
+      };
+
+      smtpHost = lib.mkOption {
+        type = lib.types.str;
+        description = ''
+          SMTP submission server hostname. Same TLS requirements as
+          imapHost — public CA bundle, no self-signed certs.
+        '';
+        example = "smtp.example.com";
+      };
+
+      smtpPort = lib.mkOption {
+        type = lib.types.port;
+        default = 465;
+        description = ''
+          SMTPS port (implicit TLS wrapper). Default 465 is the
+          submissions port — STARTTLS on 587 is not currently
+          supported by the adapter.
+        '';
+      };
+
+      pollIntervalSecs = lib.mkOption {
+        type = lib.types.ints.between 5 3600;
+        default = 30;
+        description = ''
+          How often (seconds) to poll IMAP for unseen messages. Floored
+          at 5 to avoid hammering the server. v1 of the adapter
+          deliberately uses polling instead of IMAP IDLE — IDLE is a
+          follow-up if latency turns out to matter for a low-traffic
+          channel.
+        '';
+      };
+
+      allowedSenders = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        description = ''
+          Email addresses (case-insensitive) granted `Owner` trust on
+          inbound mail. Senders not in this list are still processed,
+          but at `Anonymous` trust — they get a tool-free conversational
+          reply, same as XMPP MUC. An empty list means everyone is
+          anonymous, which is a valid (if unusual) deployment.
+        '';
+        example = [ "alice@example.com" "bob@example.org" ];
+      };
+    };
+
     gateway.openai = {
       enable = lib.mkEnableOption "OpenAI-compatible HTTP gateway inside the companion daemon";
 
@@ -418,6 +514,10 @@ in
         {
           assertion = cfg.channels.xmpp.enable -> cfg.daemon.enable;
           message = "services.axios-companion.channels.xmpp requires daemon.enable — the adapter runs inside the daemon";
+        }
+        {
+          assertion = cfg.channels.email.enable -> cfg.daemon.enable;
+          message = "services.axios-companion.channels.email requires daemon.enable — the adapter runs inside the daemon";
         }
         {
           assertion = cfg.daemon.enable -> cfg.daemon.mcpGatewayPackage != null;
@@ -494,6 +594,17 @@ in
             }"
             "COMPANION_XMPP_MENTION_ONLY=${if cfg.channels.xmpp.mentionOnly then "1" else "0"}"
             "COMPANION_XMPP_STREAM_MODE=${cfg.channels.xmpp.streamMode}"
+          ] ++ lib.optionals cfg.channels.email.enable [
+            "COMPANION_EMAIL_ENABLE=1"
+            "COMPANION_EMAIL_ADDRESS=${cfg.channels.email.address}"
+            "COMPANION_EMAIL_DISPLAY_NAME=${cfg.channels.email.displayName}"
+            "COMPANION_EMAIL_PASSWORD_FILE=${cfg.channels.email.passwordFile}"
+            "COMPANION_EMAIL_IMAP_HOST=${cfg.channels.email.imapHost}"
+            "COMPANION_EMAIL_IMAP_PORT=${toString cfg.channels.email.imapPort}"
+            "COMPANION_EMAIL_SMTP_HOST=${cfg.channels.email.smtpHost}"
+            "COMPANION_EMAIL_SMTP_PORT=${toString cfg.channels.email.smtpPort}"
+            "COMPANION_EMAIL_POLL_INTERVAL_SECS=${toString cfg.channels.email.pollIntervalSecs}"
+            "COMPANION_EMAIL_ALLOWED_SENDERS=${lib.concatStringsSep "," cfg.channels.email.allowedSenders}"
           ];
         };
 

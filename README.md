@@ -43,7 +43,7 @@ See [ROADMAP.md](./ROADMAP.md) for the full build order and which OpenSpec propo
 
 ## Getting started
 
-> **Tier 0 is complete and most of Tier 1 is live.** The `companion` wrapper, the home-manager module, and the default character-free persona all work today. The Tier 1 daemon (`companion-core`) is running — systemd user service, D-Bus control plane, persistent session routing, streaming support, an OpenAI-compatible HTTP gateway for Home Assistant voice integration, a Rust CLI client, a ratatui TUI dashboard, and **two channel adapters: Telegram and XMPP**. Remaining Tier 1 work: `channel-email`, `channel-discord`, voice (STT+TTS), and a handful of deferred CLI subcommands. Layering your own character on top is covered in [Authoring a persona](#authoring-a-persona) below. See [ROADMAP.md](./ROADMAP.md) for what's next.
+> **Tier 0 is complete and most of Tier 1 is live.** The `companion` wrapper, the home-manager module, and the default character-free persona all work today. The Tier 1 daemon (`companion-core`) is running — systemd user service, D-Bus control plane, persistent session routing, streaming support, an OpenAI-compatible HTTP gateway for Home Assistant voice integration, a Rust CLI client, a ratatui TUI dashboard, and **three channel adapters: Telegram, XMPP, and email**. Remaining Tier 1 work: `channel-discord`, voice (STT+TTS), and a handful of deferred CLI subcommands. Layering your own character on top is covered in [Authoring a persona](#authoring-a-persona) below. See [ROADMAP.md](./ROADMAP.md) for what's next.
 
 Adding axios-companion to a NixOS + home-manager system looks like this:
 
@@ -173,7 +173,7 @@ No authentication — Tailscale network trust is the access boundary, same as ev
 
 ### Channel adapters
 
-When the daemon is running, channel adapters let outside-the-terminal surfaces talk to the companion the same way the CLI does — they all dispatch through the same session router. Each adapter is opt-in and runs as an async task inside `companion-core`. Today the daemon ships two: **Telegram** (long-poll bot via teloxide) and **XMPP** (native client for self-hosted Prosody/ejabberd via tokio-xmpp). Email and Discord adapters are planned but not yet shipped.
+When the daemon is running, channel adapters let outside-the-terminal surfaces talk to the companion the same way the CLI does — they all dispatch through the same session router. Each adapter is opt-in and runs as an async task inside `companion-core`. Today the daemon ships three: **Telegram** (long-poll bot via teloxide), **XMPP** (native client for self-hosted Prosody/ejabberd via tokio-xmpp), and **email** (IMAP poll + SMTP via async-imap + lettre, with RFC 5322 thread-root session keying). A Discord adapter is planned but not yet shipped.
 
 ```nix
 services.axios-companion = {
@@ -203,6 +203,18 @@ services.axios-companion = {
       { jid = "household@muc.chat.example.org"; nick = "Sid"; }
     ];
   };
+
+  # Email channel — the bot's own inbox
+  channels.email = {
+    enable = true;
+    address = "bot@example.com";
+    displayName = "Bot";
+    passwordFile = "/run/agenix/email-bot-password";
+    imapHost = "imap.example.com";          # IMAPS on 993 by default
+    smtpHost = "smtp.example.com";          # SMTPS (implicit TLS) on 465 by default
+    allowedSenders = [ "alice@example.com" ];  # Owner trust; everyone else is Anonymous
+    pollIntervalSecs = 30;                  # poll, not IDLE — IDLE is a follow-up
+  };
 };
 ```
 
@@ -227,6 +239,17 @@ services.axios-companion = {
 - `mentionOnly = true` is the **default** for XMPP (inverted from Telegram's default of `false`), because high-volume household MUCs would otherwise burn tokens on every message that drifts past.
 - MUC support is wired in the module options (`mucRooms`) but the actual join is deferred to a later phase. The daemon currently logs `MUC join deferred to Phase 5` and skips. When that phase ships, configured rooms activate automatically on the next rebuild — no further config needed.
 - Bare-JID conversation routing means a user gets the same session whether they message you from Conversations on their phone, Gajim on a desktop, or Dino on a different desktop. Resource roaming is handled correctly.
+
+**Email-specific notes:**
+
+- **The email channel is the companion's OWN inbox**, not a path to read another mailbox on your behalf. Mail addressed to `address` lands in the dispatcher as a turn, the reply goes back out via SMTPS from the same address. If you want the companion to query your personal inboxes during a tool-using turn, expose that through an MCP tool server (e.g. via mcp-gateway), not through this channel adapter — they have different trust boundaries and different failure domains.
+- **Session identity is the RFC 5322 thread root**, not the sender. The adapter resolves `conversation_id` from `References[0]` → `In-Reply-To` → the message's own `Message-ID`, so every distinct thread is its own Claude session. Reply to an old thread and you continue that conversation; start a new thread and you get a fresh one. Same threading model your mail client already uses.
+- **Allowlist gates trust level, not delivery.** `allowedSenders` addresses get `TrustLevel::Owner` (curated MCP tool allowlist via Claude Code's `bypassPermissions`). Anyone else still gets a reply — at `TrustLevel::Anonymous`, same tool-free conversational path the XMPP MUC uses. An empty `allowedSenders` list just means everyone is anonymous; it does not deny delivery. If you want hard delivery rejection, do it at the mail server's level (Postfix filter, milter) before the message ever reaches the adapter.
+- **Loop prevention is automatic.** Inbound messages with `Auto-Submitted:` set to anything but `no` are dropped at debug level. Same for `Precedence: bulk/list`, bounces, `mailer-daemon`, `postmaster`, and `no-reply`/`noreply` senders. Outbound replies carry `Auto-Submitted: auto-replied` so well-behaved auto-responders on the other side know not to reply to the bot either. This is how you avoid turning one out-of-office into an infinite regress between two tarpit'd mailservers.
+- **Quote stripping is defensive.** Lines starting with `>` are dropped before dispatch. "On X, Y wrote:" and `-----Original Message-----` separators truncate everything after them. A 500-line quoted reply chain becomes a three-line turn request.
+- **Polling, not IDLE.** The adapter runs a 30-second IMAP poll loop (configurable via `pollIntervalSecs`, floored at 5). IMAP IDLE is a follow-up — poll is simpler, there's no persistent-connection edge case to manage, and for a low-traffic channel the 15-second average latency is fine. If email volume justifies IDLE later, it's a localized refactor in `fetch.rs`.
+- **Outbound replies are filed in the IMAP Sent folder via APPEND.** The adapter tries `Sent`, then `INBOX.Sent`, then `Sent Items` — the three folder names that cover essentially every IMAP server people actually run. Failing to file is logged as a warning; the reply still went out over SMTP.
+- **TLS is strict.** Unlike the XMPP adapter's no-verify path (which exists for self-signed Prosody behind Tailscale), the email adapter always uses Mozilla's CA bundle via `webpki-roots` and enforces standard certificate verification. Public mail servers have real certs; if yours doesn't, fix that before enabling this channel.
 
 ### MCP tool integration
 
@@ -337,7 +360,7 @@ axios-companion/
 │       └── axios-integration/  # Thin consumer-side proposal (lives in axios)
 ```
 
-Each change is a self-contained proposal with `proposal.md`, `specs/` describing behavior, and `tasks.md` with an implementation checklist. Shipped changes (`bootstrap`, `daemon-core`, `openai-gateway`, `cli-client`, `tui-dashboard`, `channel-telegram`, `channel-xmpp`) are either fully drafted or archived. The remaining proposals are skeletons that get fleshed out when picked up.
+Each change is a self-contained proposal with `proposal.md`, `specs/` describing behavior, and `tasks.md` with an implementation checklist. Shipped changes (`bootstrap`, `daemon-core`, `openai-gateway`, `cli-client`, `tui-dashboard`, `channel-telegram`, `channel-xmpp`, `channel-email`) are either fully drafted or archived. The remaining proposals are skeletons that get fleshed out when picked up.
 
 ## Development workflow
 
