@@ -43,6 +43,11 @@ mail-parser = { version = "0.11", default-features = false }
 # Tailscale; the email channel ALWAYS goes to a public IMAP/SMTP host,
 # so we want the real verifier path.
 webpki-roots = "0.26"
+# channel-discord: serenity handles the Discord Gateway WebSocket
+# (heartbeat, reconnect, session resume) and REST API (send/edit
+# messages). client implies gateway+http+model; cache gives us
+# Cache::current_user() for the bot's own ID (loop prevention).
+serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "cache", "model", "builder", "rustls_backend"] }
 
 [dev-dependencies]
 tempfile = "3"

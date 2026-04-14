@@ -195,6 +195,25 @@ async fn main() {
         None
     };
 
+    // 6e. Start the Discord channel adapter if enabled via environment.
+    let discord_shutdown = Arc::new(tokio::sync::Notify::new());
+    let discord_handle = if let Some(config) = channels::discord::DiscordConfig::from_env() {
+        info!(
+            allowed_users = config.allowed_user_ids.len(),
+            mention_only = config.mention_only,
+            stream_mode = ?config.stream_mode,
+            "starting Discord adapter"
+        );
+        let notify = discord_shutdown.clone();
+        let discord_dispatcher = dispatcher.clone();
+        Some(tokio::spawn(async move {
+            channels::discord::serve(discord_dispatcher, config, notify).await;
+        }))
+    } else {
+        info!("Discord adapter disabled (COMPANION_DISCORD_ENABLE != 1)");
+        None
+    };
+
     // 7. Signal readiness via sd_notify(READY=1).
     if let Err(e) = sd_notify::notify(false, &[sd_notify::NotifyState::Ready]) {
         warn!(%e, "sd_notify READY=1 failed (not running under systemd?)");
@@ -229,6 +248,7 @@ async fn main() {
     telegram_shutdown.notify_one();
     xmpp_shutdown.notify_one();
     email_shutdown.notify_one();
+    discord_shutdown.notify_one();
 
     if let Some(handle) = gateway_handle {
         let _ = handle.await;
@@ -240,6 +260,9 @@ async fn main() {
         let _ = handle.await;
     }
     if let Some(handle) = email_handle {
+        let _ = handle.await;
+    }
+    if let Some(handle) = discord_handle {
         let _ = handle.await;
     }
 

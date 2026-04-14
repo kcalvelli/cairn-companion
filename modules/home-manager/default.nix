@@ -356,6 +356,56 @@ in
       };
     };
 
+    channels.discord = {
+      enable = lib.mkEnableOption "Discord channel adapter inside the companion daemon";
+
+      botTokenFile = lib.mkOption {
+        type = lib.types.path;
+        description = ''
+          Path to a file containing the Discord bot token (one line,
+          no trailing newline). Compatible with agenix-managed secrets.
+          Create a bot at https://discord.com/developers/applications
+          and enable the Message Content privileged intent.
+        '';
+        example = lib.literalExpression "/run/agenix/discord-bot-token";
+      };
+
+      allowedUserIds = lib.mkOption {
+        type = lib.types.listOf lib.types.int;
+        default = [ ];
+        description = ''
+          Discord user IDs (snowflakes) granted Owner trust in DMs.
+          Empty list means nobody is Owner — all DMs get Anonymous
+          trust (no tool access). Guild messages are always Anonymous
+          regardless of this setting.
+        '';
+        example = [ 123456789012345678 ];
+      };
+
+      mentionOnly = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = ''
+          When true, the bot only responds in guild channels when
+          @mentioned. DMs are always handled regardless of this
+          setting. Defaulted to true because guild channels would
+          otherwise burn tokens on every message.
+        '';
+      };
+
+      streamMode = lib.mkOption {
+        type = lib.types.enum [ "single_message" "multi_message" ];
+        default = "single_message";
+        description = ''
+          How to render streaming responses.
+          `single_message`: edit a single message in place as chunks
+          arrive (the message appears to type itself).
+          `multi_message`: collect full response, split at 2000-char
+          boundaries, send each chunk as a separate message.
+        '';
+      };
+    };
+
     channels.email = {
       enable = lib.mkEnableOption "email channel adapter inside the companion daemon";
 
@@ -516,6 +566,10 @@ in
           message = "services.axios-companion.channels.xmpp requires daemon.enable — the adapter runs inside the daemon";
         }
         {
+          assertion = cfg.channels.discord.enable -> cfg.daemon.enable;
+          message = "services.axios-companion.channels.discord requires daemon.enable — the adapter runs inside the daemon";
+        }
+        {
           assertion = cfg.channels.email.enable -> cfg.daemon.enable;
           message = "services.axios-companion.channels.email requires daemon.enable — the adapter runs inside the daemon";
         }
@@ -594,6 +648,12 @@ in
             }"
             "COMPANION_XMPP_MENTION_ONLY=${if cfg.channels.xmpp.mentionOnly then "1" else "0"}"
             "COMPANION_XMPP_STREAM_MODE=${cfg.channels.xmpp.streamMode}"
+          ] ++ lib.optionals cfg.channels.discord.enable [
+            "COMPANION_DISCORD_ENABLE=1"
+            "COMPANION_DISCORD_BOT_TOKEN_FILE=${cfg.channels.discord.botTokenFile}"
+            "COMPANION_DISCORD_ALLOWED_USER_IDS=${lib.concatMapStringsSep "," toString cfg.channels.discord.allowedUserIds}"
+            "COMPANION_DISCORD_MENTION_ONLY=${if cfg.channels.discord.mentionOnly then "1" else "0"}"
+            "COMPANION_DISCORD_STREAM_MODE=${cfg.channels.discord.streamMode}"
           ] ++ lib.optionals cfg.channels.email.enable [
             "COMPANION_EMAIL_ENABLE=1"
             "COMPANION_EMAIL_ADDRESS=${cfg.channels.email.address}"

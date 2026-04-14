@@ -173,7 +173,7 @@ No authentication — Tailscale network trust is the access boundary, same as ev
 
 ### Channel adapters
 
-When the daemon is running, channel adapters let outside-the-terminal surfaces talk to the companion the same way the CLI does — they all dispatch through the same session router. Each adapter is opt-in and runs as an async task inside `companion-core`. Today the daemon ships three: **Telegram** (long-poll bot via teloxide), **XMPP** (native client for self-hosted Prosody/ejabberd via tokio-xmpp), and **email** (IMAP poll + SMTP via async-imap + lettre, with RFC 5322 thread-root session keying). A Discord adapter is planned but not yet shipped.
+When the daemon is running, channel adapters let outside-the-terminal surfaces talk to the companion the same way the CLI does — they all dispatch through the same session router. Each adapter is opt-in and runs as an async task inside `companion-core`. Today the daemon ships four: **Telegram** (long-poll bot via teloxide), **XMPP** (native client for self-hosted Prosody/ejabberd via tokio-xmpp), **email** (IMAP poll + SMTP via async-imap + lettre, with RFC 5322 thread-root session keying), and **Discord** (Gateway WebSocket + REST via serenity, with DM and guild channel support).
 
 ```nix
 services.axios-companion = {
@@ -204,6 +204,15 @@ services.axios-companion = {
     ];
   };
 
+  # Discord bot
+  channels.discord = {
+    enable = true;
+    botTokenFile = "/run/agenix/discord-bot-token";
+    allowedUserIds = [ 123456789012345678 ]; # Discord snowflake IDs (deny by default)
+    mentionOnly = true;                     # guild channels only — DMs always handled
+    streamMode = "single_message";          # edit-in-place via Discord message edits
+  };
+
   # Email channel — the bot's own inbox
   channels.email = {
     enable = true;
@@ -218,14 +227,14 @@ services.axios-companion = {
 };
 ```
 
-**Shared design rules across both adapters:**
+**Shared design rules across all channel adapters:**
 
-- **Empty allowlist = deny everyone.** There is no implicit-trust mode. If you forget the allowlist, the bot connects, presents itself, and ignores every message it receives.
-- **Sessions are keyed by `(surface_id, conversation_id)`.** A given human gets a continuous session per channel — but Telegram and XMPP are separate sessions by design, because the same person on two different channels often *means* different things in each.
-- **Three commands across both adapters:** `new` resets the session, `status` reports session state, `help` lists them. Telegram uses the `/` prefix (Telegram registers commands server-side, clients know to forward). XMPP uses `!` because Gajim and other XMPP clients intercept `/` locally for `/me`, `/say`, `/clear`, MUC moderation — slash commands literally never reach the wire. Bang is the standard XMPP/IRC bot convention.
+- **Empty allowlist = deny everyone (or Anonymous trust).** There is no implicit-trust mode. Telegram and Discord use numeric user IDs; XMPP uses bare JIDs; email uses addresses. If you forget the allowlist, the bot connects but everyone gets Anonymous trust at best.
+- **Sessions are keyed by `(surface_id, conversation_id)`.** A given human gets a continuous session per channel — but Telegram, XMPP, Discord, and email are separate sessions by design, because the same person on different channels often *means* different things in each.
+- **Three commands across all adapters:** `new` resets the session, `status` reports session state, `help` lists them. Telegram uses the `/` prefix (Telegram registers commands server-side). XMPP, Discord, and email use `!` because their clients intercept `/` locally.
 - **Unrecognized commands get a deflection reply,** not a forward to the dispatcher. This prevents Claude Code skill leakage from typos like `/skil` or `!skil`.
-- **`streamMode = "single_message"` is the default for both.** Telegram uses native message edits (one bubble that grows as the response streams in). XMPP uses XEP-0308 Last Message Correction stanzas (one stanza followed by `<replace/>` updates). `multi_message` collects the full response and splits it: 4096 chars for Telegram, ~3000 chars for XMPP (the empirical comfortable size for Conversations, Gajim, and Dino).
-- **Both adapters reconnect with backoff** if the upstream service goes away. Verified live for XMPP by restarting Prosody under the daemon and watching it recover in ~1 second.
+- **`streamMode = "single_message"` is the default for all.** Telegram uses native message edits. XMPP uses XEP-0308 Last Message Correction. Discord uses message edits via the REST API. `multi_message` collects the full response and splits it: 4096 chars for Telegram, ~3000 chars for XMPP, 2000 chars for Discord.
+- **All adapters reconnect with backoff** if the upstream service goes away.
 
 **Telegram-specific notes:**
 
@@ -239,6 +248,16 @@ services.axios-companion = {
 - `mentionOnly = true` is the **default** for XMPP (inverted from Telegram's default of `false`), because high-volume household MUCs would otherwise burn tokens on every message that drifts past.
 - MUC support is wired in the module options (`mucRooms`) but the actual join is deferred to a later phase. The daemon currently logs `MUC join deferred to Phase 5` and skips. When that phase ships, configured rooms activate automatically on the next rebuild — no further config needed.
 - Bare-JID conversation routing means a user gets the same session whether they message you from Conversations on their phone, Gajim on a desktop, or Dino on a different desktop. Resource roaming is handled correctly.
+
+**Discord-specific notes:**
+
+- **Requires the Message Content privileged intent.** Enable it in the Discord Developer Portal under your bot's settings. Without it, guild messages arrive with empty content and the adapter silently drops them. DMs always have content regardless of this intent.
+- **Guild messages are always Anonymous trust.** Room membership is not identity — same reasoning as XMPP MUC. DMs from `allowedUserIds` get Owner trust; everyone else in DMs gets Anonymous.
+- **Mention stripping is automatic.** When someone @mentions the bot, the `<@BOT_ID>` tag is stripped from the message before dispatch so the model doesn't see its own ping as the first token. A bare ping (just the mention, nothing else) is dropped.
+- **Bot messages are always dropped.** The adapter ignores all messages with the `bot` flag set, including its own. This is the loop prevention — no self-response, no cross-bot chattering.
+- **Thread messages get their own session.** Discord threads use the thread's channel ID as `conversation_id`, so a thread runs as an independent session parallel to its parent channel.
+- **`mentionOnly = true` is the default** (same as XMPP, inverted from Telegram), because guild channels would otherwise burn tokens on every message.
+- **2000-character message limit.** Discord's API cap is 2000 chars. In single_message mode, responses that exceed the limit during streaming are deleted and resent as multiple messages. In multi_message mode, responses are split at 2000-char boundaries before sending.
 
 **Email-specific notes:**
 
