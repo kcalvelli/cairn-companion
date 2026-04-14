@@ -235,6 +235,7 @@ async fn handle_message(
         conversation_id,
         message_text: stripped_body,
         trust,
+        model: None,
     };
 
     let mut rx = dispatcher.dispatch(turn_req).await;

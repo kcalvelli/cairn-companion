@@ -695,6 +695,7 @@ async fn handle_chat_message(
         conversation_id,
         message_text: body,
         trust: TrustLevel::Owner,
+        model: None,
     };
     let rx = dispatcher.dispatch(turn_req).await;
 
@@ -869,6 +870,7 @@ async fn handle_groupchat_message(
         conversation_id,
         message_text: dispatch_body,
         trust: TrustLevel::Anonymous,
+        model: None,
     };
     let rx = dispatcher.dispatch(turn_req).await;
 

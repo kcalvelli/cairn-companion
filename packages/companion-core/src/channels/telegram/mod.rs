@@ -352,6 +352,7 @@ async fn handle_message(
         conversation_id,
         message_text: text.clone(),
         trust: TrustLevel::Owner,
+        model: None,
     };
 
     let mut rx = dispatcher.dispatch(turn_req).await;

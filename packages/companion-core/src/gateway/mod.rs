@@ -160,11 +160,13 @@ async fn chat_completions(
     // Until per-key auth lands on the gateway, every gateway turn must
     // run with Anonymous trust so the deny list strips Bash/Edit/MCP/etc.
     // Do NOT upgrade this to Owner without solving auth first.
+    let requested_model = req.model.clone();
     let turn_req = TurnRequest {
         surface_id: "openai".into(),
         conversation_id,
         message_text,
         trust: TrustLevel::Anonymous,
+        model: requested_model,
     };
 
     let created = state.start_time;

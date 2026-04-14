@@ -58,6 +58,7 @@ impl CompanionInterface {
             conversation_id: conversation_id.to_string(),
             message_text: message.to_string(),
             trust: TrustLevel::Owner,
+            model: None,
         };
 
         self.in_flight.fetch_add(1, Ordering::Relaxed);
@@ -109,6 +110,7 @@ impl CompanionInterface {
             conversation_id: conversation_id.to_string(),
             message_text: message.to_string(),
             trust: TrustLevel::Owner,
+            model: None,
         };
 
         let mut rx = self.dispatcher.dispatch(req).await;

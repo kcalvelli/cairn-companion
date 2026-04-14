@@ -174,6 +174,7 @@ impl Handler {
             conversation_id: conversation_id.to_string(),
             message_text: text.to_string(),
             trust,
+            model: None,
         };
 
         let mut rx = self.dispatcher.dispatch(turn_req).await;

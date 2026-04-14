@@ -51,6 +51,12 @@ pub struct TurnRequest {
     /// flags on the companion subprocess. Required, not defaulted —
     /// channel adapters MUST decide explicitly.
     pub trust: TrustLevel,
+    /// Optional model override passed as `--model <value>` to the companion
+    /// subprocess. When `None`, the CLI's default model is used (typically
+    /// Opus). Callers like the OpenAI gateway forward the request's `model`
+    /// field here so external clients (axios-ai-mail, etc.) can request a
+    /// cheaper tier for classification and other low-stakes work.
+    pub model: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -557,6 +563,10 @@ impl Dispatcher {
             }
         }
 
+        if let Some(ref model) = req.model {
+            cmd.arg("--model").arg(model);
+        }
+
         if let Some(ref resume_id) = claude_session_id {
             cmd.arg("--resume").arg(resume_id);
         }
@@ -573,6 +583,7 @@ impl Dispatcher {
         info!(
             surface = %req.surface_id,
             conversation = %req.conversation_id,
+            model = ?req.model,
             resume = ?claude_session_id,
             "spawning companion"
         );
@@ -801,6 +812,7 @@ mod tests {
             surface_id: surface.into(),
             conversation_id: conv.into(),
             message_text: msg.into(),
+            model: None,
             trust,
         }
     }
