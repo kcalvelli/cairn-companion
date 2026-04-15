@@ -16,7 +16,7 @@
 - [x] **2.4** Implement CRUD operations: `create_session`, `lookup_session`, `set_claude_session_id`, `touch_session`, `list_sessions`, `list_by_surface`
 - [x] **2.5** Enable WAL mode on connection open
 - [x] **2.6** Unit tests for all store operations (in-memory SQLite for test speed)
-- [x] **2.7** Verify database file is created at `$XDG_DATA_HOME/axios-companion/sessions.db` when run from the binary
+- [x] **2.7** Verify database file is created at `$XDG_DATA_HOME/cairn-companion/sessions.db` when run from the binary
 
 ## Phase 3: Dispatcher core
 
@@ -33,7 +33,7 @@
 ## Phase 4: D-Bus interface
 
 - [x] **4.1** Add `zbus` dependency for async D-Bus on tokio
-- [x] **4.2** Implement the `org.axios.Companion1` interface struct with `zbus::interface` macro
+- [x] **4.2** Implement the `org.cairn.Companion1` interface struct with `zbus::interface` macro
 - [x] **4.3** Implement `SendMessage` method: create `TurnRequest`, dispatch, accumulate `Complete`, return string (or D-Bus error)
 - [x] **4.4** Implement `StreamMessage` method: create `TurnRequest`, dispatch, return immediately, emit `ResponseChunk`/`ResponseComplete`/`ResponseError` signals
 - [x] **4.5** Implement `ListSessions` method: query the session store, return array of tuples
@@ -54,15 +54,15 @@
 
 ## Phase 6: Home-manager module updates
 
-- [x] **6.1** Add `services.axios-companion.daemon.enable` option (boolean, default `false`)
-- [x] **6.2** Add `services.axios-companion.daemon.package` option (default: the flake's `companion-core` package)
+- [x] **6.1** Add `services.cairn-companion.daemon.enable` option (boolean, default `false`)
+- [x] **6.2** Add `services.cairn-companion.daemon.package` option (default: the flake's `companion-core` package)
 - [x] **6.3** Wire `systemd.user.services.companion-core` unit in the module when `daemon.enable = true`, with `Environment=` for session store path
 - [x] **6.4** Ensure Tier 0 `companion` wrapper continues to work unchanged when `daemon.enable = false` (no regressions)
 - [x] **6.5** Verify: `home-manager switch` with `daemon.enable = true` installs and starts the service
 
 ## Phase 7: End-to-end testing, documentation, and close
 
-- [x] **7.1** Test: `busctl --user call org.axios.Companion /org/axios/Companion org.axios.Companion1 SendMessage sss "dbus" "test" "hello"` returns a response
+- [x] **7.1** Test: `busctl --user call org.cairn.Companion /org/cairn/Companion org.cairn.Companion1 SendMessage sss "dbus" "test" "hello"` returns a response
 - [ ] **7.2** Test: `StreamMessage` emits `ResponseChunk` and `ResponseComplete` signals observable via `busctl --user monitor`
 - [ ] **7.3** Test: session persistence — stop and restart the daemon, send a follow-up to a prior conversation, verify context is retained
 - [ ] **7.4** Test: concurrent sessions from different conversation IDs run in parallel

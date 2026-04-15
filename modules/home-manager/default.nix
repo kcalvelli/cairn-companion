@@ -1,10 +1,10 @@
-# axios-companion home-manager module.
+# cairn-companion home-manager module.
 #
-# Tier 0: Exposes `services.axios-companion.*` options and, when enabled,
+# Tier 0: Exposes `services.cairn-companion.*` options and, when enabled,
 # installs a per-user `companion` wrapper binary that invokes `claude`
 # with persona files, workspace directory, and any mcp-gateway config.
 #
-# Tier 1: Adds `services.axios-companion.daemon.*` options. When
+# Tier 1: Adds `services.cairn-companion.daemon.*` options. When
 # `daemon.enable = true`, installs and starts the `companion-core`
 # systemd user service (D-Bus control plane, session routing, etc.).
 #
@@ -20,7 +20,7 @@
   ...
 }:
 let
-  cfg = config.services.axios-companion;
+  cfg = config.services.cairn-companion;
 
   # Per-user build of the wrapper, using the flake-exposed helper rather
   # than consuming `self.packages.${pkgs.system}.default` (the reference
@@ -43,15 +43,15 @@ let
   '';
 in
 {
-  options.services.axios-companion = {
-    enable = lib.mkEnableOption "axios-companion Tier 0 wrapper around Claude Code";
+  options.services.cairn-companion = {
+    enable = lib.mkEnableOption "cairn-companion Tier 0 wrapper around Claude Code";
 
     package = lib.mkOption {
       type = lib.types.package;
       default = builtCompanion;
       defaultText = lib.literalMD ''
         a per-user build produced by `lib.buildCompanion` using the other
-        `services.axios-companion.*` options
+        `services.cairn-companion.*` options
       '';
       description = ''
         The resolved companion wrapper package to install. Defaults to a
@@ -77,7 +77,7 @@ in
       basePackage = lib.mkOption {
         type = lib.types.package;
         default = self.packages.${pkgs.system}.personaDefault;
-        defaultText = lib.literalExpression "inputs.axios-companion.packages.\${pkgs.system}.personaDefault";
+        defaultText = lib.literalExpression "inputs.cairn-companion.packages.\${pkgs.system}.personaDefault";
         description = ''
           Package containing the default `AGENT.md` and `USER.md` files.
           The wrapper reads both files from this package at build time
@@ -114,8 +114,8 @@ in
 
     workspaceDir = lib.mkOption {
       type = lib.types.str;
-      default = "${config.xdg.dataHome}/axios-companion/workspace";
-      defaultText = lib.literalExpression "\"\${config.xdg.dataHome}/axios-companion/workspace\"";
+      default = "${config.xdg.dataHome}/cairn-companion/workspace";
+      defaultText = lib.literalExpression "\"\${config.xdg.dataHome}/cairn-companion/workspace\"";
       description = ''
         Absolute path to the companion workspace directory. The wrapper
         ensures this directory exists on first run (creating `README.md`
@@ -145,7 +145,7 @@ in
       package = lib.mkOption {
         type = lib.types.package;
         default = self.packages.${pkgs.system}.companion-core;
-        defaultText = lib.literalExpression "inputs.axios-companion.packages.\${pkgs.system}.companion-core";
+        defaultText = lib.literalExpression "inputs.cairn-companion.packages.\${pkgs.system}.companion-core";
         description = ''
           The companion-core daemon package. Override only if you have a
           local fork or want to pin a specific build.
@@ -163,10 +163,10 @@ in
           registry, so mcp-gw must be on the systemd unit's PATH.
 
           Defaults to `pkgs.mcp-gateway` if available in the caller's
-          nixpkgs (e.g. via the axios distro overlay). When using
-          axios-companion without the axios distro, set this explicitly:
+          nixpkgs (e.g. via the cairn distro overlay). When using
+          cairn-companion without the cairn distro, set this explicitly:
 
-            services.axios-companion.daemon.mcpGatewayPackage =
+            services.cairn-companion.daemon.mcpGatewayPackage =
               inputs.mcp-gateway.packages.''${pkgs.system}.default;
         '';
       };
@@ -178,7 +178,7 @@ in
       package = lib.mkOption {
         type = lib.types.package;
         default = self.packages.${pkgs.system}.companion-cli;
-        defaultText = lib.literalExpression "inputs.axios-companion.packages.\${pkgs.system}.companion-cli";
+        defaultText = lib.literalExpression "inputs.cairn-companion.packages.\${pkgs.system}.companion-cli";
         description = ''
           The companion CLI package. When enabled, this replaces the Tier 0
           shell wrapper as the `companion` binary on the user's PATH. The
@@ -193,7 +193,7 @@ in
       package = lib.mkOption {
         type = lib.types.package;
         default = self.packages.${pkgs.system}.companion-tui;
-        defaultText = lib.literalExpression "inputs.axios-companion.packages.\${pkgs.system}.companion-tui";
+        defaultText = lib.literalExpression "inputs.cairn-companion.packages.\${pkgs.system}.companion-tui";
         description = ''
           The companion TUI dashboard package. Provides `companion-tui`
           binary for terminal-native daemon monitoring.
@@ -551,40 +551,40 @@ in
       assertions = [
         {
           assertion = cfg.cli.enable -> cfg.daemon.enable;
-          message = "services.axios-companion.cli requires daemon.enable — the CLI talks to the daemon via D-Bus";
+          message = "services.cairn-companion.cli requires daemon.enable — the CLI talks to the daemon via D-Bus";
         }
         {
           assertion = cfg.tui.enable -> cfg.daemon.enable;
-          message = "services.axios-companion.tui requires daemon.enable — the TUI talks to the daemon via D-Bus";
+          message = "services.cairn-companion.tui requires daemon.enable — the TUI talks to the daemon via D-Bus";
         }
         {
           assertion = cfg.channels.telegram.enable -> cfg.daemon.enable;
-          message = "services.axios-companion.channels.telegram requires daemon.enable — the adapter runs inside the daemon";
+          message = "services.cairn-companion.channels.telegram requires daemon.enable — the adapter runs inside the daemon";
         }
         {
           assertion = cfg.channels.xmpp.enable -> cfg.daemon.enable;
-          message = "services.axios-companion.channels.xmpp requires daemon.enable — the adapter runs inside the daemon";
+          message = "services.cairn-companion.channels.xmpp requires daemon.enable — the adapter runs inside the daemon";
         }
         {
           assertion = cfg.channels.discord.enable -> cfg.daemon.enable;
-          message = "services.axios-companion.channels.discord requires daemon.enable — the adapter runs inside the daemon";
+          message = "services.cairn-companion.channels.discord requires daemon.enable — the adapter runs inside the daemon";
         }
         {
           assertion = cfg.channels.email.enable -> cfg.daemon.enable;
-          message = "services.axios-companion.channels.email requires daemon.enable — the adapter runs inside the daemon";
+          message = "services.cairn-companion.channels.email requires daemon.enable — the adapter runs inside the daemon";
         }
         {
           assertion = cfg.daemon.enable -> cfg.daemon.mcpGatewayPackage != null;
           message = ''
-            services.axios-companion.daemon.enable requires daemon.mcpGatewayPackage
+            services.cairn-companion.daemon.enable requires daemon.mcpGatewayPackage
             to be set. The daemon shells out to `mcp-gw --json list` once at
             startup to build the Anonymous channel permission deny list, and
             refuses to start if it can't find the binary.
 
-            If you use axios's nixpkgs overlay, pkgs.mcp-gateway is available
+            If you use cairn's nixpkgs overlay, pkgs.mcp-gateway is available
             and the default handles it. Otherwise set:
 
-              services.axios-companion.daemon.mcpGatewayPackage =
+              services.cairn-companion.daemon.mcpGatewayPackage =
                 inputs.mcp-gateway.packages.''${pkgs.system}.default;
           '';
         }
@@ -607,8 +607,8 @@ in
       # Systemd user service for the daemon.
       systemd.user.services.companion-core = {
         Unit = {
-          Description = "axios-companion daemon";
-          Documentation = "https://github.com/kcalvelli/axios-companion";
+          Description = "cairn-companion daemon";
+          Documentation = "https://github.com/kcalvelli/cairn-companion";
         };
 
         Service = {

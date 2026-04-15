@@ -1,7 +1,7 @@
-# companion-tui — terminal dashboard for the axios-companion daemon.
+# companion-tui — terminal dashboard for the cairn-companion daemon.
 #
 # Provides `companion-tui` binary that monitors the daemon via D-Bus.
-# Enabled via services.axios-companion.tui.enable = true.
+# Enabled via services.cairn-companion.tui.enable = true.
 {
   lib,
   rustPlatform,
@@ -20,7 +20,7 @@ rustPlatform.buildRustPackage {
   buildInputs = [ dbus ];
 
   meta = {
-    description = "axios-companion TUI dashboard — terminal-native monitoring for the companion daemon";
+    description = "cairn-companion TUI dashboard — terminal-native monitoring for the companion daemon";
     license = lib.licenses.mit;
     platforms = lib.platforms.linux;
   };

@@ -8,7 +8,7 @@ Tier 2
 
 ## Summary
 
-Ship a set of MCP tool servers that expose the local machine's capabilities — shell execution, app launching, screenshot capture, clipboard access, desktop notifications, journal reading, and Niri compositor control — as MCP tools consumable by Claude Code via mcp-gateway. Each tool server is a small Rust binary registered with mcp-gateway through a home-manager module. Together, these servers turn every axios-companion-enabled machine into a tool surface that the Tier 2 hub can route actions to.
+Ship a set of MCP tool servers that expose the local machine's capabilities — shell execution, app launching, screenshot capture, clipboard access, desktop notifications, journal reading, and Niri compositor control — as MCP tools consumable by Claude Code via mcp-gateway. Each tool server is a small Rust binary registered with mcp-gateway through a home-manager module. Together, these servers turn every cairn-companion-enabled machine into a tool surface that the Tier 2 hub can route actions to.
 
 ## Motivation
 
@@ -32,9 +32,9 @@ New MCP tool servers, each as a small Rust binary:
 
 Home-manager module additions:
 
-- `services.axios-companion.spoke.enable` — master enable for spoke tools
-- `services.axios-companion.spoke.tools.<tool>.enable` — per-tool toggle
-- `services.axios-companion.spoke.tools.shell.allowlist` — command allowlist (`["*"]` for fully open)
+- `services.cairn-companion.spoke.enable` — master enable for spoke tools
+- `services.cairn-companion.spoke.tools.<tool>.enable` — per-tool toggle
+- `services.cairn-companion.spoke.tools.shell.allowlist` — command allowlist (`["*"]` for fully open)
 - Automatic registration of enabled tool servers with `services.mcp-gateway.servers`
 
 ### Out of scope
@@ -48,7 +48,7 @@ Home-manager module additions:
 
 - Building a new daemon parallel to mcp-gateway — these tools register WITH mcp-gateway, which already exists
 - Application-level auth on the tool endpoints — Tailscale provides network trust per the `mcp-gateway` design
-- X11 tool variants — Wayland-only (grim/slurp/wl-clipboard/wtype); axios users run Niri
+- X11 tool variants — Wayland-only (grim/slurp/wl-clipboard/wtype); cairn users run Niri
 
 ## Dependencies
 
@@ -60,9 +60,9 @@ This proposal does NOT depend on `daemon-core` or any Tier 1 proposal. Spoke too
 ## Success criteria
 
 1. Each tool server is an independently-buildable Nix package exposing a stdio MCP server
-2. Enabling `services.axios-companion.spoke.enable = true` registers all enabled tools with mcp-gateway via `services.mcp-gateway.servers.*`
+2. Enabling `services.cairn-companion.spoke.enable = true` registers all enabled tools with mcp-gateway via `services.mcp-gateway.servers.*`
 3. After `home-manager switch`, `mcp-gw tools list` shows all enabled companion tools alongside existing mcp-gateway tools
 4. A `companion "take a screenshot and tell me what's on screen"` invocation (at Tier 0 or Tier 1) successfully calls `companion-mcp-screenshot`, returns the image, and Claude describes it
 5. The shell allowlist is enforced — commands not in the allowlist are rejected before execution
 6. Tool invocations are audit-logged to the user journal via `journalctl --user -u mcp-gateway`
-7. All tools work on a standard axios Niri + DMS environment with no X11 fallbacks
+7. All tools work on a standard cairn Niri + DMS environment with no X11 fallbacks

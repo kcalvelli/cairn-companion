@@ -2,7 +2,7 @@
 name = "companion-cli"
 version = "0.1.0"
 edition = "2021"
-description = "axios-companion CLI — command-line interface for the companion daemon"
+description = "cairn-companion CLI — command-line interface for the companion daemon"
 
 [[bin]]
 name = "companion"

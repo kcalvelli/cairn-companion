@@ -6,7 +6,7 @@
 - [x] **1.2** Create `openspec/config.yaml` with context, non-goals, and architectural rules
 - [x] **1.3** Create `openspec/changes/bootstrap/` with proposal, specs, and tasks (this document)
 - [x] **1.4** Create skeleton proposals for all downstream tiers in `openspec/changes/`
-- [x] **1.5** Initial commit and push to `github.com/kcalvelli/axios-companion`
+- [x] **1.5** Initial commit and push to `github.com/kcalvelli/cairn-companion`
 
 ## Phase 2: Nix package for the companion wrapper
 
@@ -25,7 +25,7 @@
   - [x] `exec` to `claude` so the exit code propagates transparently
 - [x] **2.3** Expose `lib.${system}.buildCompanion` as a flake output — this is the named helper the home-manager module consumes. It accepts the arguments from 2.1 and returns the built wrapper package.
 - [x] **2.4** Wire `packages.${system}.default` in `flake.nix` to be the reference build produced by `buildCompanion` with default arguments (default persona, `pkgs.claude-code`, default workspace). This is for `nix build` smoke testing and documentation, not the user-facing build path.
-- [x] **2.5** Wire `overlays.default` in `flake.nix` to expose only `axios-companion` (the reference wrapper build). Do NOT expose the default-persona package via the overlay — it is an implementation detail.
+- [x] **2.5** Wire `overlays.default` in `flake.nix` to expose only `cairn-companion` (the reference wrapper build). Do NOT expose the default-persona package via the overlay — it is an implementation detail.
 - [x] **2.6** Verify `nix build .#default` produces a working binary and `nix eval .#lib.${system}.buildCompanion` resolves to a function.
 
 ## Phase 3: Default persona files
@@ -51,19 +51,19 @@
   - [x] `persona.basePackage` — package (default: this flake's persona-default)
   - [x] `persona.userFile` — nullable path
   - [x] `persona.extraFiles` — list of paths
-  - [x] `workspaceDir` — string (default: `"${config.xdg.dataHome}/axios-companion/workspace"`)
+  - [x] `workspaceDir` — string (default: `"${config.xdg.dataHome}/cairn-companion/workspace"`)
   - [x] `mcpConfigFile` — nullable path
 - [x] **4.2** Implement the `config` block:
   - [x] Guard everything behind `lib.mkIf cfg.enable`
-  - [x] Build the wrapper by calling `inputs.axios-companion.lib.${pkgs.system}.buildCompanion` (the flake-exposed helper from Phase 2 task 2.3) with `claudePackage`, `personaBasePackage`, `userFile`, `extraFiles`, `defaultWorkspace`, and `mcpConfigFile` taken from `cfg`
-  - [x] Do NOT consume `inputs.axios-companion.packages.${pkgs.system}.default` directly — that is the reference build, not the per-user build path
+  - [x] Build the wrapper by calling `inputs.cairn-companion.lib.${pkgs.system}.buildCompanion` (the flake-exposed helper from Phase 2 task 2.3) with `claudePackage`, `personaBasePackage`, `userFile`, `extraFiles`, `defaultWorkspace`, and `mcpConfigFile` taken from `cfg`
+  - [x] Do NOT consume `inputs.cairn-companion.packages.${pkgs.system}.default` directly — that is the reference build, not the per-user build path
   - [x] Add the resulting package to `home.packages`
 - [x] **4.3** Wire `homeManagerModules.default` in `flake.nix` to point at `./modules/home-manager`
 - [x] **4.4** Verify module evaluates cleanly with `nix eval` or a test home-manager config
 
 ## Phase 5: Manual end-to-end testing
 
-- [x] **5.1** Test minimal enable: fresh home-manager config with only `services.axios-companion.enable = true`
+- [x] **5.1** Test minimal enable: fresh home-manager config with only `services.cairn-companion.enable = true`
   - `home-manager switch` succeeds
   - `which companion` finds the binary
   - `companion "hello"` runs and produces a response
@@ -76,7 +76,7 @@
   - Companion adopts the voice described *(validated with full Sid Friday five-file persona port on edge — voice/beliefs/family/context all layering correctly, per-file content traceable in responses)*
 - [x] **5.4** Test mcp-gateway auto-detection: with mcp-gateway running on the same machine
   - Companion picks up the config from the auto-detect paths
-  - Companion can invoke MCP tools from gateway servers *(validated via real email triage against axios-ai-mail MCP server)*
+  - Companion can invoke MCP tools from gateway servers *(validated via real email triage against cairn-mail MCP server)*
 - [~] **5.5** Test mcp-gateway absent: on a machine without mcp-gateway — **deferred**, low-risk absence branch of file-existence check, no downstream dependencies
 - [x] **5.6** Test flag passthrough: multi-turn interactive session exercises the same passthrough plumbing; `-p`, `--model`, and `--resume` are pure passthrough with no wrapper involvement
 - [x] **5.7** Test exit code propagation — implicit in every successful Phase 5 invocation
@@ -92,6 +92,6 @@
 ## Phase 7: Validation and close
 
 - [x] **7.1** Run `nix flake check` — **passes** (two cosmetic warnings only: `homeManagerModules` is an "unknown" output because nix-flake-check doesn't recognize the home-manager convention, and `nixfmt-rfc-style` has been renamed to `pkgs.nixfmt`; neither is an error)
-- [x] **7.2** Verify a NixOS user who is not on axios can consume the flake and use the module — **verified**: all `axios` references in `modules/` and `packages/` are the project name (`axios-companion`), the option namespace (`services.axios-companion.*`), or comments. Zero imports of `inputs.axios`, zero references to the axios NixOS distribution.
+- [x] **7.2** Verify a NixOS user who is not on cairn can consume the flake and use the module — **verified**: all `cairn` references in `modules/` and `packages/` are the project name (`cairn-companion`), the option namespace (`services.cairn-companion.*`), or comments. Zero imports of `inputs.cairn`, zero references to the cairn NixOS distribution.
 - [~] **7.3** Verify multi-user scenario: two users on the same machine each enable the module independently and get isolated workspaces and configs — **deferred**, the isolation is structural (per-user `$XDG_DATA_HOME`, per-user `~/.claude/`, per-user `home.packages`) and has no shared mutable state in the module; risk of regression is near-zero
 - [x] **7.4** Archive this change to `openspec/changes/archive/bootstrap/` once all tasks above are checked

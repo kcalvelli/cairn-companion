@@ -23,7 +23,7 @@ Discord is where communities live. Users who run gaming servers, family servers,
 ### In scope
 
 - Discord adapter running inside the daemon as an async task via serenity's gateway client
-- Home-manager options under `services.axios-companion.channels.discord`:
+- Home-manager options under `services.cairn-companion.channels.discord`:
   - `enable`
   - `botTokenFile` — agenix-compatible token file
   - `allowedUserIds` — list of Discord user snowflake IDs (u64), controls Owner trust in DMs

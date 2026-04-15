@@ -18,7 +18,7 @@ Keith's current Sid deployment on mini exposes an OpenAI-compatible chat complet
 
 ### Why this was not in the initial roadmap
 
-The initial axios-companion roadmap was drafted under the assumption that all inbound channels were interactive chat-style (Telegram, Discord, email, XMPP). The HA voice integration was overlooked because it's a *pull* interface exposed via HTTP, not a *push* interface that receives messages from a bot platform. When the initial ZeroClaw replacement audit was done, the gateway's chat completions endpoint was flagged as "verify whether anything uses it" — a subsequent check confirmed HA Conversation is a heavy consumer.
+The initial cairn-companion roadmap was drafted under the assumption that all inbound channels were interactive chat-style (Telegram, Discord, email, XMPP). The HA voice integration was overlooked because it's a *pull* interface exposed via HTTP, not a *push* interface that receives messages from a bot platform. When the initial ZeroClaw replacement audit was done, the gateway's chat completions endpoint was flagged as "verify whether anything uses it" — a subsequent check confirmed HA Conversation is a heavy consumer.
 
 This proposal closes that gap. It is **required** before ZeroClaw can be decommissioned on mini, because disabling ZeroClaw without a replacement for this endpoint would break voice interaction across every room in the house.
 
@@ -30,7 +30,7 @@ The OpenAI gateway is fundamentally different: it's a **pull API** that speaks a
 
 Keeping this separate from channel adapters makes the distinction clear and avoids overloading the `channel-*` namespace with something that isn't really a channel.
 
-### Why implement in axios-companion, not in mcp-gateway
+### Why implement in cairn-companion, not in mcp-gateway
 
 A tempting alternative would be to add an OpenAI chat completions endpoint to mcp-gateway (which is also Python/FastAPI and already Tailscale-aware). Rejected because:
 
@@ -49,7 +49,7 @@ The gateway lives in the companion daemon, reuses the dispatcher and session sto
   - `POST /v1/chat/completions` — OpenAI chat completions API
   - `GET /v1/models` — returns a single model entry describing "companion" as the available model (HA and other clients often probe this)
   - `GET /health` — liveness endpoint for monitoring
-- Home-manager options under `services.axios-companion.gateway.openai`:
+- Home-manager options under `services.cairn-companion.gateway.openai`:
   - `enable` — boolean
   - `port` — integer (default: 18789 for parity with current ZeroClaw config)
   - `bindAddress` — string (default: Tailscale interface via hostname, or `127.0.0.1` if not on a tailnet)
@@ -91,7 +91,7 @@ This proposal is a peer of the `channel-*` proposals in Tier 1 — it does not d
 
 ## Success criteria
 
-1. `services.axios-companion.gateway.openai.enable = true` in a home-manager config produces a daemon that listens on the configured port after `home-manager switch`
+1. `services.cairn-companion.gateway.openai.enable = true` in a home-manager config produces a daemon that listens on the configured port after `home-manager switch`
 2. `curl http://localhost:18789/v1/models` returns a valid OpenAI-format models list with the configured model name
 3. `curl -X POST http://localhost:18789/v1/chat/completions -d '{"messages":[{"role":"user","content":"hello"}],"stream":false}'` returns a valid non-streaming chat completion with the companion's response
 4. Same request with `"stream": true` returns a valid SSE stream of OpenAI-format delta chunks terminated with `data: [DONE]`

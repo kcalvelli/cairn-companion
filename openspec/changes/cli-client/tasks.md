@@ -3,7 +3,7 @@
 ## Completed
 
 - [x] Create `packages/cli-client/` Rust package with clap + zbus
-- [x] Implement D-Bus proxy matching daemon's `org.axios.Companion1` interface
+- [x] Implement D-Bus proxy matching daemon's `org.cairn.Companion1` interface
 - [x] Default send mode: `companion "prompt"` streams via D-Bus signals
 - [x] Interactive REPL: `companion chat` with streaming responses
 - [x] Stdin mode: `companion -` reads from stdin

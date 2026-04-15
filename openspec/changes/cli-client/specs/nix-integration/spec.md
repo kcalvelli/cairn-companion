@@ -4,7 +4,7 @@
 
 The CLI ships as a Rust package built by `rustPlatform.buildRustPackage`,
 exposed via `flake.nix` as `packages.<system>.companion-cli`, and wired
-into the home-manager module under `services.axios-companion.cli.*`.
+into the home-manager module under `services.cairn-companion.cli.*`.
 
 ## Package
 
@@ -21,14 +21,14 @@ packages.<system>.companion-cli = pkgs.callPackage ./packages/cli-client { };
 
 ## Home-Manager Options
 
-### `services.axios-companion.cli.enable`
+### `services.cairn-companion.cli.enable`
 
 Type: `bool`, default: `false`
 
 Assertion: `cli.enable → daemon.enable` (the CLI talks D-Bus; no daemon = no
 one to talk to).
 
-### `services.axios-companion.cli.package`
+### `services.cairn-companion.cli.package`
 
 Type: `package`, default: `self.packages.<system>.companion-cli`
 

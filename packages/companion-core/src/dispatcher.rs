@@ -54,7 +54,7 @@ pub struct TurnRequest {
     /// Optional model override passed as `--model <value>` to the companion
     /// subprocess. When `None`, the CLI's default model is used (typically
     /// Opus). Callers like the OpenAI gateway forward the request's `model`
-    /// field here so external clients (axios-ai-mail, etc.) can request a
+    /// field here so external clients (cairn-mail, etc.) can request a
     /// cheaper tier for classification and other low-stakes work.
     pub model: Option<String>,
 }
@@ -113,20 +113,20 @@ const BUILTIN_DENY_TOOLS: &[&str] = &[
 /// host like edge. Finite, hardcoded — adding a new server to the
 /// gateway does NOT add to this list.
 const LEGACY_STDIO_DENY: &[&str] = &[
-    "mcp__axios-ai-mail__bulk_update_tags",
-    "mcp__axios-ai-mail__compose_email",
-    "mcp__axios-ai-mail__delete_by_filter",
-    "mcp__axios-ai-mail__delete_email",
-    "mcp__axios-ai-mail__get_unread_count",
-    "mcp__axios-ai-mail__list_accounts",
-    "mcp__axios-ai-mail__list_tags",
-    "mcp__axios-ai-mail__mark_read",
-    "mcp__axios-ai-mail__read_email",
-    "mcp__axios-ai-mail__reply_to_email",
-    "mcp__axios-ai-mail__restore_email",
-    "mcp__axios-ai-mail__search_emails",
-    "mcp__axios-ai-mail__send_email",
-    "mcp__axios-ai-mail__update_tags",
+    "mcp__cairn-mail__bulk_update_tags",
+    "mcp__cairn-mail__compose_email",
+    "mcp__cairn-mail__delete_by_filter",
+    "mcp__cairn-mail__delete_email",
+    "mcp__cairn-mail__get_unread_count",
+    "mcp__cairn-mail__list_accounts",
+    "mcp__cairn-mail__list_tags",
+    "mcp__cairn-mail__mark_read",
+    "mcp__cairn-mail__read_email",
+    "mcp__cairn-mail__reply_to_email",
+    "mcp__cairn-mail__restore_email",
+    "mcp__cairn-mail__search_emails",
+    "mcp__cairn-mail__send_email",
+    "mcp__cairn-mail__update_tags",
     "mcp__mcp-dav__create_contact",
     "mcp__mcp-dav__create_event",
     "mcp__mcp-dav__delete_contact",
@@ -161,7 +161,7 @@ const ANONYMOUS_PUBLIC_SERVERS: &[&str] = &["github", "brave-search"];
 /// tests don't need a real gateway running. Mirrors the production
 /// shape but with a tiny enumerated deny list.
 #[cfg(test)]
-const TEST_ANONYMOUS_SETTINGS_JSON: &str = r#"{"permissions":{"allow":[],"deny":["Bash","Edit","Read","mcp__axios-mcp-gateway__sentinel__reboot_host"]}}"#;
+const TEST_ANONYMOUS_SETTINGS_JSON: &str = r#"{"permissions":{"allow":[],"deny":["Bash","Edit","Read","mcp__cairn-mcp-gateway__sentinel__reboot_host"]}}"#;
 
 /// One server entry from `mcp-gw --json list` output.
 #[derive(Debug, serde::Deserialize)]
@@ -259,7 +259,7 @@ fn build_deny_json_from_servers(servers: &[GatewayServer]) -> String {
         }
         for tool in &server.tools {
             deny.push(format!(
-                "mcp__axios-mcp-gateway__{}__{}",
+                "mcp__cairn-mcp-gateway__{}__{}",
                 server.id, tool
             ));
         }
@@ -1040,7 +1040,7 @@ mod tests {
         // and verify the resulting JSON denies the right things.
         let servers = vec![
             GatewayServer {
-                id: "axios-ai-mail".into(),
+                id: "cairn-mail".into(),
                 enabled: true,
                 tools: vec!["get_unread_count".into(), "send_email".into()],
             },
@@ -1071,14 +1071,14 @@ mod tests {
         assert!(json.contains(r#""mcp__sentinel__reboot_host""#));
 
         // Gateway-prefixed: dangerous servers denied
-        assert!(json.contains(r#""mcp__axios-mcp-gateway__axios-ai-mail__get_unread_count""#));
-        assert!(json.contains(r#""mcp__axios-mcp-gateway__axios-ai-mail__send_email""#));
-        assert!(json.contains(r#""mcp__axios-mcp-gateway__sentinel__reboot_host""#));
+        assert!(json.contains(r#""mcp__cairn-mcp-gateway__cairn-mail__get_unread_count""#));
+        assert!(json.contains(r#""mcp__cairn-mcp-gateway__cairn-mail__send_email""#));
+        assert!(json.contains(r#""mcp__cairn-mcp-gateway__sentinel__reboot_host""#));
 
         // Public servers NOT in deny list (they go through the gateway
         // but anonymous turns can use them)
         assert!(
-            !json.contains("mcp__axios-mcp-gateway__github__create_pull_request"),
+            !json.contains("mcp__cairn-mcp-gateway__github__create_pull_request"),
             "github tools must NOT appear in anonymous deny list"
         );
 

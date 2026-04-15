@@ -1,4 +1,4 @@
-# companion-core — the axios-companion daemon.
+# companion-core — the cairn-companion daemon.
 #
 # Persistent session manager and D-Bus control plane. Invokes the
 # Tier 0 `companion` wrapper per turn; adds session mapping, surface
@@ -21,7 +21,7 @@ rustPlatform.buildRustPackage {
   buildInputs = [ dbus ];
 
   meta = {
-    description = "axios-companion daemon — persistent session manager and D-Bus control plane";
+    description = "cairn-companion daemon — persistent session manager and D-Bus control plane";
     license = lib.licenses.mit;
     platforms = lib.platforms.linux;
   };

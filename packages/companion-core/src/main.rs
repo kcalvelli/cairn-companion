@@ -44,7 +44,7 @@ async fn main() {
         format!("{home}/.local/share")
     });
     let db_path = std::path::PathBuf::from(data_dir)
-        .join("axios-companion")
+        .join("cairn-companion")
         .join("sessions.db");
 
     let store = match store::SessionStore::open(&db_path) {

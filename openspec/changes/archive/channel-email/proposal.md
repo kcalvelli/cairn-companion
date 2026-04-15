@@ -32,7 +32,7 @@ Conflating these would be a category error: the channel adapter receives message
 ### In scope
 
 - Email adapter running inside the daemon as an async task
-- Home-manager options under `services.axios-companion.channels.email`:
+- Home-manager options under `services.cairn-companion.channels.email`:
   - `enable`
   - `address` — the bot's own mail address
   - `displayName` — optional `From:` header display name

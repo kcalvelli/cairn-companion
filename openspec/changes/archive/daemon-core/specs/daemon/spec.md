@@ -35,7 +35,7 @@ The unit MUST NOT specify:
 
 #### Scenario: Service installs and starts
 
-- **Given**: A user has `services.axios-companion.daemon.enable = true` in their home-manager config
+- **Given**: A user has `services.cairn-companion.daemon.enable = true` in their home-manager config
 - **When**: They run `home-manager switch`
 - **Then**: The `companion-core.service` unit is installed in `~/.config/systemd/user/`
 - **And**: `systemctl --user start companion-core` starts the daemon
@@ -55,7 +55,7 @@ The daemon MUST execute its startup sequence in this order:
 1. Initialize structured logging via `tracing` to the systemd journal
 2. Open (or create) the SQLite session store and run pending migrations
 3. Initialize the dispatcher
-4. Acquire the D-Bus well-known name `org.axios.Companion` on the session bus
+4. Acquire the D-Bus well-known name `org.cairn.Companion` on the session bus
 5. Signal readiness via `sd_notify(READY=1)`
 6. Enter the tokio event loop
 
@@ -63,14 +63,14 @@ If any step fails, the daemon MUST log the error and exit with a non-zero status
 
 #### Scenario: Clean startup
 
-- **Given**: No other process owns `org.axios.Companion` on the session bus
+- **Given**: No other process owns `org.cairn.Companion` on the session bus
 - **And**: The session store path is writable
 - **When**: The daemon starts
 - **Then**: It acquires the D-Bus name, signals ready, and accepts method calls
 
 #### Scenario: D-Bus name already taken
 
-- **Given**: Another process owns `org.axios.Companion` on the session bus
+- **Given**: Another process owns `org.cairn.Companion` on the session bus
 - **When**: The daemon attempts to start
 - **Then**: It logs an error explaining the name conflict
 - **And**: It exits with a non-zero status
@@ -161,7 +161,7 @@ The daemon MUST NOT create its own log files, write to stdout/stderr for logging
 
 ### Requirement: One Daemon Per User
 
-The daemon runs as a `systemd --user` service, which enforces exactly one instance per user session. The D-Bus well-known name `org.axios.Companion` provides an additional single-instance guarantee — if the name is already taken, the new instance fails to start.
+The daemon runs as a `systemd --user` service, which enforces exactly one instance per user session. The D-Bus well-known name `org.cairn.Companion` provides an additional single-instance guarantee — if the name is already taken, the new instance fails to start.
 
 The daemon MUST NOT implement its own lock file or PID file mechanism. Systemd and D-Bus name ownership are sufficient.
 

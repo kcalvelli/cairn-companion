@@ -46,7 +46,7 @@ The gateway MUST expose `GET /v1/models` that returns an OpenAI-format model lis
       "id": "<COMPANION_GATEWAY_MODEL>",
       "object": "model",
       "created": <daemon_start_unix_timestamp>,
-      "owned_by": "axios-companion"
+      "owned_by": "cairn-companion"
     }
   ]
 }

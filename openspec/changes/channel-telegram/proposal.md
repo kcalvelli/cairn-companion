@@ -12,14 +12,14 @@ Add a Telegram channel adapter to the companion daemon, allowing users to chat w
 
 ## Motivation
 
-Telegram is the most accessible remote interface for a personal AI companion: mobile clients on every platform, rich media support, instant delivery without polling, free, and a well-documented bot API. Most axios-companion users will want to chat with their companion from a phone while away from their desk. Telegram is the highest-value first channel for that reason, and it's the most mature ecosystem in Rust (via `teloxide`).
+Telegram is the most accessible remote interface for a personal AI companion: mobile clients on every platform, rich media support, instant delivery without polling, free, and a well-documented bot API. Most cairn-companion users will want to chat with their companion from a phone while away from their desk. Telegram is the highest-value first channel for that reason, and it's the most mature ecosystem in Rust (via `teloxide`).
 
 ## Scope
 
 ### In scope
 
 - `companion-channel-telegram` module inside the daemon (not a separate process — runs as an async task inside `companion-core`)
-- Home-manager options under `services.axios-companion.channels.telegram`:
+- Home-manager options under `services.cairn-companion.channels.telegram`:
   - `enable`
   - `botTokenFile` — path to file containing bot token (agenix-compatible)
   - `allowedUsers` — list of Telegram user IDs allowed to DM the bot (deny-by-default)
@@ -52,7 +52,7 @@ Telegram is the most accessible remote interface for a personal AI companion: mo
 
 ## Success criteria
 
-1. User configures `services.axios-companion.channels.telegram.enable = true` with a bot token file and an allowlist
+1. User configures `services.cairn-companion.channels.telegram.enable = true` with a bot token file and an allowlist
 2. After `home-manager switch`, the daemon establishes a connection to Telegram and the bot responds to messages from allowed users
 3. Messages from users not in the allowlist are ignored (or rejected with a configurable message)
 4. Long responses are split into multiple Telegram messages without breaking mid-word

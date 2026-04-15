@@ -2,7 +2,7 @@
 
 ## Summary
 
-The CLI uses a zbus 5 proxy trait to call the daemon's `org.axios.Companion1`
+The CLI uses a zbus 5 proxy trait to call the daemon's `org.cairn.Companion1`
 interface on the session bus. This is the sole communication channel between
 the CLI binary and the daemon.
 
@@ -28,8 +28,8 @@ Signal subscriptions for streaming:
 
 ## Connection
 
-- Bus name: `org.axios.Companion`
-- Object path: `/org/axios/Companion`
+- Bus name: `org.cairn.Companion`
+- Object path: `/org/cairn/Companion`
 - Session bus (not system bus)
 - Connection failure prints a diagnostic pointing at `systemctl --user status companion-core`
 

@@ -1,12 +1,12 @@
 # Roadmap
 
-axios-companion is built in tiers. Each tier is a complete, shippable feature set that users can stop at if it meets their needs. Each OpenSpec change in `openspec/changes/` corresponds to one discrete piece of work that can be picked up independently, respecting the dependency ordering below.
+cairn-companion is built in tiers. Each tier is a complete, shippable feature set that users can stop at if it meets their needs. Each OpenSpec change in `openspec/changes/` corresponds to one discrete piece of work that can be picked up independently, respecting the dependency ordering below.
 
 This document is the master index. See individual `proposal.md` files for details.
 
 ## Tiering philosophy
 
-- **Tier 0** is the minimum viable product — a persona'd shell wrapper around Claude Code. Every axios user gets this on day one.
+- **Tier 0** is the minimum viable product — a persona'd shell wrapper around Claude Code. Every cairn user gets this on day one.
 - **Tier 1** adds a persistent user-level daemon that unlocks channel adapters (Telegram/Discord/email/XMPP), an OpenAI-compatible HTTP gateway for voice and other non-interactive consumers (Home Assistant, etc.), a proper CLI, and a TUI dashboard. Users who want a "Sid is always there" experience on one machine stop here.
 - **Tier 2** adds distributed agency — one companion identity that can act on whichever machine the user is currently using, via mcp-gateway over Tailscale. Users with multiple NixOS machines unlock this.
 - **Optional** polish layers come after Tier 2 — GUI clients, desktop shell integrations, advanced tooling. Never required.
@@ -41,9 +41,9 @@ Work proceeds roughly top-to-bottom. Items at the same level can be built in par
 
 - [ ] **[gui-gtk4](./openspec/changes/gui-gtk4/)** — GTK4/libadwaita desktop application for visual dashboards. Explicitly last and optional. *Depends on: bootstrap, daemon-core, cli-client, tui-dashboard*
 
-### Consumer-side (lives in axios repo, not this one)
+### Consumer-side (lives in cairn repo, not this one)
 
-- [ ] **[axios-integration](./openspec/changes/axios-integration/)** — Thin axios-side wiring that imports this flake and exposes axios-friendly defaults. *Depends on: bootstrap (at minimum). The actual change artifact will live in axios/openspec/changes/, not here.*
+- [ ] **[cairn-integration](./openspec/changes/cairn-integration/)** — Thin cairn-side wiring that imports this flake and exposes cairn-friendly defaults. *Depends on: bootstrap (at minimum). The actual change artifact will live in cairn/openspec/changes/, not here.*
 
 ## How to pick the next proposal
 

@@ -1,12 +1,12 @@
-# companion-core.service — axios-companion daemon
+# companion-core.service — cairn-companion daemon
 #
 # This is a reference unit file. The home-manager module generates the
 # actual unit with the correct ExecStart path from the Nix store.
 # See modules/home-manager/ for the real thing.
 
 [Unit]
-Description=axios-companion daemon
-Documentation=https://github.com/kcalvelli/axios-companion
+Description=cairn-companion daemon
+Documentation=https://github.com/kcalvelli/cairn-companion
 
 [Service]
 Type=notify

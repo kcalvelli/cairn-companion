@@ -21,7 +21,7 @@
 //! verified this end-to-end against Prosody on mini (DM connect, presence,
 //! MUC join, groupchat send, all green) before this code landed in
 //! companion-core. The spike crate is preserved at
-//! `~/.local/share/axios-companion/workspace/xmpp-spike` for future
+//! `~/.local/share/cairn-companion/workspace/xmpp-spike` for future
 //! debugging.
 
 use std::borrow::Cow;

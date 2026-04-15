@@ -1,13 +1,13 @@
-//! D-Bus proxy for org.axios.Companion1.
+//! D-Bus proxy for org.cairn.Companion1.
 //!
 //! Client-side proxy — identical to the one in cli-client.
 
 use zbus::Connection;
 
 #[zbus::proxy(
-    interface = "org.axios.Companion1",
-    default_service = "org.axios.Companion",
-    default_path = "/org/axios/Companion"
+    interface = "org.cairn.Companion1",
+    default_service = "org.cairn.Companion",
+    default_path = "/org/cairn/Companion"
 )]
 pub trait Companion {
     /// Send a message and block until the full response arrives.

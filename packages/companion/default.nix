@@ -1,4 +1,4 @@
-# axios-companion Tier 0 wrapper — writeShellApplication factory.
+# cairn-companion Tier 0 wrapper — writeShellApplication factory.
 #
 # This is the function exposed as `lib.<system>.buildCompanion` on the flake.
 # Callers (notably the home-manager module in modules/home-manager/) invoke
@@ -60,7 +60,7 @@ writeShellApplication {
     claudePackage
   ];
   text = ''
-    # axios-companion Tier 0 wrapper (generated).
+    # cairn-companion Tier 0 wrapper (generated).
     #
     # Everything below the "Build-time-baked configuration" block is generic
     # shell logic; the values in that block are baked by Nix at build time.
@@ -92,7 +92,7 @@ writeShellApplication {
     if [ ! -d "$WORKSPACE" ]; then
       mkdir -p "$WORKSPACE"
       cat > "$WORKSPACE/README.md" <<'EOF'
-    # axios-companion workspace
+    # cairn-companion workspace
 
     This directory is your companion's home on the filesystem. It is
     attached to every `companion` invocation via `claude --add-dir`, so
@@ -104,7 +104,7 @@ writeShellApplication {
     - Project bookmarks, task lists, or memory files the agent maintains
     - Personal context that belongs on this machine
 
-    This directory is not synchronized across machines by axios-companion.
+    This directory is not synchronized across machines by cairn-companion.
     If you want it to follow you between machines, sync it yourself
     (git, syncthing, Tailscale Drive, etc.).
     EOF

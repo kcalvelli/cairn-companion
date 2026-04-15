@@ -2,7 +2,7 @@
 name = "companion-tui"
 version = "0.1.0"
 edition = "2021"
-description = "axios-companion TUI dashboard — terminal-native monitoring for the companion daemon"
+description = "cairn-companion TUI dashboard — terminal-native monitoring for the companion daemon"
 
 [[bin]]
 name = "companion-tui"

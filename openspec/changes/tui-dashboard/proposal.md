@@ -12,7 +12,7 @@ A terminal-native dashboard (`companion-tui`) built on `ratatui` that provides a
 
 ## Motivation
 
-Users who live in terminals deserve a native dashboard that doesn't require a browser or a GUI session. A TUI is also the only dashboard option that works over SSH, fits the aesthetic of the typical axios-companion user (terminal-first, NixOS, tiling WM), and runs in any environment with a terminal emulator — no desktop session required. The TUI is likely to be the primary dashboard experience for most users, making GUI clients an optional polish layer rather than a necessity.
+Users who live in terminals deserve a native dashboard that doesn't require a browser or a GUI session. A TUI is also the only dashboard option that works over SSH, fits the aesthetic of the typical cairn-companion user (terminal-first, NixOS, tiling WM), and runs in any environment with a terminal emulator — no desktop session required. The TUI is likely to be the primary dashboard experience for most users, making GUI clients an optional polish layer rather than a necessity.
 
 ## Scope
 

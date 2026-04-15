@@ -407,7 +407,7 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&body).unwrap();
         assert_eq!(v["object"], "list");
         assert_eq!(v["data"][0]["id"], "test-model");
-        assert_eq!(v["data"][0]["owned_by"], "axios-companion");
+        assert_eq!(v["data"][0]["owned_by"], "cairn-companion");
     }
 
     #[tokio::test]

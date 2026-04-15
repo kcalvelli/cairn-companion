@@ -60,7 +60,7 @@ fn draw_disconnected(f: &mut Frame, area: Rect) {
         )),
         Line::from(""),
         Line::from(Span::styled(
-            "  waiting for org.axios.Companion on D-Bus...",
+            "  waiting for org.cairn.Companion on D-Bus...",
             Style::default().fg(Color::DarkGray),
         )),
         Line::from(""),

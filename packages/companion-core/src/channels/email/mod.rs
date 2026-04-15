@@ -15,7 +15,7 @@
 //! ## Scope
 //!
 //! This adapter handles the companion's OWN inbox — the address
-//! configured via `services.axios-companion.channels.email.address`. Mail
+//! configured via `services.cairn-companion.channels.email.address`. Mail
 //! addressed TO that address lands in the dispatcher as a turn. It is not
 //! a mechanism for the companion to read other mailboxes on the user's
 //! behalf; if you want that, expose it through an MCP tool server, not

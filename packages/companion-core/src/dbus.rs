@@ -1,4 +1,4 @@
-//! D-Bus interface — org.axios.Companion1 on the session bus.
+//! D-Bus interface — org.cairn.Companion1 on the session bus.
 //!
 //! Translates D-Bus method calls into dispatcher TurnRequests and maps
 //! TurnEvents back to D-Bus replies or signals.
@@ -30,7 +30,7 @@ impl CompanionInterface {
     }
 }
 
-#[interface(name = "org.axios.Companion1")]
+#[interface(name = "org.cairn.Companion1")]
 impl CompanionInterface {
     /// Submit a message and block until the full response is available.
     async fn send_message(
@@ -45,7 +45,7 @@ impl CompanionInterface {
             ));
         }
 
-        // D-Bus trust = Owner. The org.axios.Companion1 interface lives
+        // D-Bus trust = Owner. The org.cairn.Companion1 interface lives
         // on the session bus, which is UID-guarded — only processes
         // running as Keith can reach it. Anything able to call this is
         // already running with Keith's trust. (Pre-existing concern:
@@ -238,11 +238,11 @@ pub async fn serve(dispatcher: Arc<Dispatcher>) -> zbus::Result<Connection> {
 
     connection
         .object_server()
-        .at("/org/axios/Companion", iface)
+        .at("/org/cairn/Companion", iface)
         .await?;
 
     connection
-        .request_name("org.axios.Companion")
+        .request_name("org.cairn.Companion")
         .await?;
 
     // Spawn a task that subscribes to the dispatcher's broadcast channel
@@ -254,7 +254,7 @@ pub async fn serve(dispatcher: Arc<Dispatcher>) -> zbus::Result<Connection> {
                 Ok(ev) => {
                     let iface_ref = match signal_conn
                         .object_server()
-                        .interface::<_, CompanionInterface>("/org/axios/Companion")
+                        .interface::<_, CompanionInterface>("/org/cairn/Companion")
                         .await
                     {
                         Ok(r) => r,
@@ -306,6 +306,6 @@ pub async fn serve(dispatcher: Arc<Dispatcher>) -> zbus::Result<Connection> {
         }
     });
 
-    info!("D-Bus interface ready on org.axios.Companion");
+    info!("D-Bus interface ready on org.cairn.Companion");
     Ok(connection)
 }

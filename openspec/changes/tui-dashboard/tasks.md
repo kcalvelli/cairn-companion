@@ -37,7 +37,7 @@
 
 - [x] `packages/tui-dashboard/default.nix` (rustPlatform.buildRustPackage)
 - [x] `companion-tui` exposed in `flake.nix` packages
-- [x] Home-manager: `services.axios-companion.tui.enable` + `tui.package`
+- [x] Home-manager: `services.cairn-companion.tui.enable` + `tui.package`
 - [x] Assertion: `tui.enable → daemon.enable`
 - [x] `nix build .#companion-tui` — clean
 

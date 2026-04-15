@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The `companion` binary is the user-facing entry point for axios-companion Tier 0. It is a shell wrapper that invokes the `claude` CLI with persona files, workspace directory, and (if present) mcp-gateway configuration pre-loaded — turning a stateless `claude` invocation into a persona-aware companion without any persistent process.
+The `companion` binary is the user-facing entry point for cairn-companion Tier 0. It is a shell wrapper that invokes the `claude` CLI with persona files, workspace directory, and (if present) mcp-gateway configuration pre-loaded — turning a stateless `claude` invocation into a persona-aware companion without any persistent process.
 
 ## ADDED Requirements
 
@@ -12,7 +12,7 @@ The `companion` binary MUST be implemented as a `pkgs.writeShellApplication`, no
 
 #### Scenario: User inspects the binary
 
-- **Given**: A user has `services.axios-companion.enable = true`
+- **Given**: A user has `services.cairn-companion.enable = true`
 - **When**: The user runs `cat $(which companion)`
 - **Then**: The output is a shell script they can read
 - **And**: The script is less than 200 lines
@@ -41,7 +41,7 @@ The wrapper also bakes a `HAS_USER_FILE` shell variable (`0` or `1`) into the sc
 
 #### Scenario: User file is wired at build time
 
-- **Given**: `services.axios-companion.persona.userFile = ./my-context.md`
+- **Given**: `services.cairn-companion.persona.userFile = ./my-context.md`
 - **When**: The module builds the wrapper via the flake's `buildCompanion` helper
 - **Then**: The generated script contains the literal store path of `./my-context.md`
 - **And**: The generated script contains `HAS_USER_FILE=1`
@@ -58,14 +58,14 @@ Later files in the order MAY add to, override, or contradict earlier files. The 
 
 #### Scenario: User has only default persona
 
-- **Given**: `services.axios-companion.persona.userFile = null` and `persona.extraFiles = [ ]`
+- **Given**: `services.cairn-companion.persona.userFile = null` and `persona.extraFiles = [ ]`
 - **When**: The user runs `companion "hello"`
 - **Then**: The system prompt passed to Claude is the concatenation of default `AGENT.md` and default `USER.md` template
 - **And**: The total system prompt includes both files' contents in that order
 
 #### Scenario: User overrides USER.md
 
-- **Given**: `services.axios-companion.persona.userFile = ./my-context.md`
+- **Given**: `services.cairn-companion.persona.userFile = ./my-context.md`
 - **When**: The user runs `companion "hello"`
 - **Then**: The system prompt contains default `AGENT.md` followed by the contents of `./my-context.md`
 - **And**: The default `USER.md` template is NOT included
@@ -84,7 +84,7 @@ The decision of whether to copy the template MUST be made by reading the `HAS_US
 
 #### Scenario: First-ever invocation on a fresh system
 
-- **Given**: `services.axios-companion.workspaceDir = "$XDG_DATA_HOME/axios-companion/workspace"` (default)
+- **Given**: `services.cairn-companion.workspaceDir = "$XDG_DATA_HOME/cairn-companion/workspace"` (default)
 - **And**: The directory does not exist
 - **When**: The user runs `companion "hello"` for the first time
 - **Then**: The directory is created
@@ -142,7 +142,7 @@ If none exist, the wrapper MUST invoke Claude without `--mcp-config`. The wrappe
 
 #### Scenario: User explicitly sets mcpConfigFile
 
-- **Given**: `services.axios-companion.mcpConfigFile = "/custom/path.json"`
+- **Given**: `services.cairn-companion.mcpConfigFile = "/custom/path.json"`
 - **When**: The user runs `companion "hello"`
 - **Then**: The wrapper uses `/custom/path.json` and does NOT auto-detect
 - **And**: If the file does not exist, the wrapper prints a warning to stderr but still invokes Claude

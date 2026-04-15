@@ -1,4 +1,4 @@
-# Default persona package for axios-companion Tier 0.
+# Default persona package for cairn-companion Tier 0.
 #
 # Ships two files into $out:
 #   - AGENT.md : response format rules, zero character voice
@@ -10,7 +10,7 @@
 # Resolved At Build Time".
 { stdenvNoCC, lib }:
 stdenvNoCC.mkDerivation {
-  pname = "axios-companion-persona-default";
+  pname = "cairn-companion-persona-default";
   version = "0.1.0";
 
   src = ../../persona/default;
@@ -26,7 +26,7 @@ stdenvNoCC.mkDerivation {
   '';
 
   meta = {
-    description = "Character-free default persona files for axios-companion";
+    description = "Character-free default persona files for cairn-companion";
     license = lib.licenses.mit;
     platforms = lib.platforms.linux;
   };

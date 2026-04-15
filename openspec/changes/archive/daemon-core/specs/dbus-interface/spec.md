@@ -10,18 +10,18 @@ The D-Bus surface is one implementation of the dispatcher's `Surface` trait — 
 
 ### Requirement: Bus Name and Object Path
 
-The daemon MUST register the well-known name `org.axios.Companion` on the user session bus. All methods and signals MUST be exposed on:
+The daemon MUST register the well-known name `org.cairn.Companion` on the user session bus. All methods and signals MUST be exposed on:
 
-- **Object path:** `/org/axios/Companion`
-- **Interface:** `org.axios.Companion1`
+- **Object path:** `/org/cairn/Companion`
+- **Interface:** `org.cairn.Companion1`
 
-The interface name is versioned (`Companion1`) to allow API evolution without breaking existing clients. Future incompatible changes would introduce `org.axios.Companion2`.
+The interface name is versioned (`Companion1`) to allow API evolution without breaking existing clients. Future incompatible changes would introduce `org.cairn.Companion2`.
 
 #### Scenario: Interface is discoverable
 
 - **Given**: The daemon is running
-- **When**: A user runs `busctl --user introspect org.axios.Companion /org/axios/Companion`
-- **Then**: The output lists the `org.axios.Companion1` interface
+- **When**: A user runs `busctl --user introspect org.cairn.Companion /org/cairn/Companion`
+- **Then**: The output lists the `org.cairn.Companion1` interface
 - **And**: All methods and signals defined in this spec are visible
 
 ### Requirement: SendMessage Method (Synchronous)
@@ -155,7 +155,7 @@ Returns a list of unique `surface_id` strings that have at least one active sess
 
 ### Requirement: Response Signals
 
-The daemon MUST emit the following signals on the `org.axios.Companion1` interface, scoped by `surface` and `conversation_id` so clients can filter:
+The daemon MUST emit the following signals on the `org.cairn.Companion1` interface, scoped by `surface` and `conversation_id` so clients can filter:
 
 **ResponseChunk:**
 
@@ -194,10 +194,10 @@ When a method call fails, the daemon MUST return a D-Bus error reply using stand
 
 | Error name | When |
 |------------|------|
-| `org.axios.Companion1.Error.TurnFailed` | Claude subprocess exited non-zero or produced unparseable output |
-| `org.axios.Companion1.Error.SessionNotFound` | A `--resume` was attempted but claude could not find the session |
-| `org.axios.Companion1.Error.InvalidArgument` | A required argument was empty or malformed |
-| `org.axios.Companion1.Error.DaemonShuttingDown` | The daemon is in shutdown and not accepting new requests |
+| `org.cairn.Companion1.Error.TurnFailed` | Claude subprocess exited non-zero or produced unparseable output |
+| `org.cairn.Companion1.Error.SessionNotFound` | A `--resume` was attempted but claude could not find the session |
+| `org.cairn.Companion1.Error.InvalidArgument` | A required argument was empty or malformed |
+| `org.cairn.Companion1.Error.DaemonShuttingDown` | The daemon is in shutdown and not accepting new requests |
 
 Error replies MUST include a human-readable description string.
 
@@ -206,12 +206,12 @@ Error replies MUST include a human-readable description string.
 - **Given**: A client calls `SendMessage("dbus", "conv-1", "hello")`
 - **And**: The claude subprocess crashes
 - **When**: The method returns
-- **Then**: The return is a D-Bus error reply with name `org.axios.Companion1.Error.TurnFailed`
+- **Then**: The return is a D-Bus error reply with name `org.cairn.Companion1.Error.TurnFailed`
 - **And**: The error message describes what happened
 
 #### Scenario: Empty message is rejected
 
 - **Given**: A client calls `SendMessage("dbus", "conv-1", "")`
 - **When**: The method is invoked
-- **Then**: The return is a D-Bus error reply with name `org.axios.Companion1.Error.InvalidArgument`
+- **Then**: The return is a D-Bus error reply with name `org.cairn.Companion1.Error.InvalidArgument`
 - **And**: No claude subprocess is spawned

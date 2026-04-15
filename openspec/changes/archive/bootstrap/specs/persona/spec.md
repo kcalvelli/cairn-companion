@@ -2,7 +2,7 @@
 
 ## Purpose
 
-axios-companion ships a minimal default persona with zero character voice. This specification defines what the default `AGENT.md` and `USER.md` files contain, what they deliberately exclude, and how users extend them. Character-free defaults are an architectural commitment enforced by the `rules.proposal.Character-Free Defaults` rule in `openspec/config.yaml`.
+cairn-companion ships a minimal default persona with zero character voice. This specification defines what the default `AGENT.md` and `USER.md` files contain, what they deliberately exclude, and how users extend them. Character-free defaults are an architectural commitment enforced by the `rules.proposal.Character-Free Defaults` rule in `openspec/config.yaml`.
 
 ## ADDED Requirements
 
@@ -75,12 +75,12 @@ All sections MUST use placeholder values (`<your name>`, `<your role>`, etc.) th
 
 ### Requirement: Users Override Via Module Options, Not By Editing Package Files
 
-Users who want to replace the default persona MUST do so by setting `services.axios-companion.persona.userFile` and/or `persona.extraFiles`. They MUST NOT be required to edit files inside the Nix store or fork the package.
+Users who want to replace the default persona MUST do so by setting `services.cairn-companion.persona.userFile` and/or `persona.extraFiles`. They MUST NOT be required to edit files inside the Nix store or fork the package.
 
 #### Scenario: User layers a character voice
 
 - **Given**: A user has written their own `./voice.md` with a character persona
-- **When**: They set `services.axios-companion.persona.extraFiles = [ ./voice.md ]`
+- **When**: They set `services.cairn-companion.persona.extraFiles = [ ./voice.md ]`
 - **And**: They run `home-manager switch` and invoke `companion`
 - **Then**: The companion adopts the voice described in `./voice.md`
 - **And**: The user did not modify any files in the Nix store
@@ -98,7 +98,7 @@ The default persona files MUST ship as part of a Nix package (referenced via `pe
 
 #### Scenario: Flake consumed from GitHub
 
-- **Given**: A user imports the flake via `inputs.axios-companion.url = "github:kcalvelli/axios-companion";`
+- **Given**: A user imports the flake via `inputs.cairn-companion.url = "github:kcalvelli/cairn-companion";`
 - **When**: The module evaluates `persona.basePackage`
 - **Then**: The default persona files are available from the Nix-built package
 - **And**: No source paths need to be resolved outside the Nix store

@@ -250,7 +250,7 @@ impl ModelsResponse {
                 id: model_name,
                 object: "model",
                 created,
-                owned_by: "axios-companion",
+                owned_by: "cairn-companion",
             }],
         }
     }
@@ -383,7 +383,7 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["object"], "list");
         assert_eq!(v["data"][0]["id"], "sid");
-        assert_eq!(v["data"][0]["owned_by"], "axios-companion");
+        assert_eq!(v["data"][0]["owned_by"], "cairn-companion");
     }
 
     #[test]

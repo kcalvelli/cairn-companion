@@ -34,7 +34,7 @@
 
 ## Phase 4: Home-manager module
 
-- [x] **4.1** Add `services.axios-companion.gateway.openai.enable` option
+- [x] **4.1** Add `services.cairn-companion.gateway.openai.enable` option
 - [x] **4.2** Add `port`, `bindAddress`, `modelName`, `sessionPolicy` options
 - [x] **4.3** Wire `Environment` entries into the systemd unit when gateway is enabled
 - [x] **4.4** Verify: `nix flake check` passes, `nix build .#companion-core` succeeds

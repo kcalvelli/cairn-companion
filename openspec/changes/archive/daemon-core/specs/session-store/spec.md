@@ -8,7 +8,7 @@ The session store is a SQLite database that maps `(surface, conversation_id)` pa
 
 ### Requirement: Database Location
 
-The session store MUST be located at `$XDG_DATA_HOME/axios-companion/sessions.db`. This places it as a sibling of the `workspace/` directory under the same `axios-companion/` parent, but outside the workspace itself.
+The session store MUST be located at `$XDG_DATA_HOME/cairn-companion/sessions.db`. This places it as a sibling of the `workspace/` directory under the same `cairn-companion/` parent, but outside the workspace itself.
 
 The database MUST NOT be inside the workspace directory. The workspace is passed to claude via `--add-dir`, which would expose the database file to the agent. The session store is daemon infrastructure, not agent-visible state.
 
@@ -16,7 +16,7 @@ The daemon MUST create the directory and file if they do not exist. If `XDG_DATA
 
 #### Scenario: Fresh install creates the database
 
-- **Given**: The directory `$XDG_DATA_HOME/axios-companion/` exists (created by the Tier 0 wrapper's first-run scaffolding)
+- **Given**: The directory `$XDG_DATA_HOME/cairn-companion/` exists (created by the Tier 0 wrapper's first-run scaffolding)
 - **And**: No `sessions.db` file exists
 - **When**: The daemon starts
 - **Then**: It creates `sessions.db` with the correct schema
@@ -24,9 +24,9 @@ The daemon MUST create the directory and file if they do not exist. If `XDG_DATA
 
 #### Scenario: Database is not inside the workspace
 
-- **Given**: The workspace is at `$XDG_DATA_HOME/axios-companion/workspace/`
-- **And**: The session store is at `$XDG_DATA_HOME/axios-companion/sessions.db`
-- **When**: The wrapper passes `--add-dir $XDG_DATA_HOME/axios-companion/workspace` to claude
+- **Given**: The workspace is at `$XDG_DATA_HOME/cairn-companion/workspace/`
+- **And**: The session store is at `$XDG_DATA_HOME/cairn-companion/sessions.db`
+- **When**: The wrapper passes `--add-dir $XDG_DATA_HOME/cairn-companion/workspace` to claude
 - **Then**: Claude does not see `sessions.db` (it is outside the `workspace/` directory)
 
 ### Requirement: Schema

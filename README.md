@@ -1,12 +1,12 @@
-# axios-companion
+# cairn-companion
 
 A persistent, customizable persona wrapper around [Claude Code](https://docs.claude.com/en/docs/claude-code) — turn your Claude subscription into an AI agent that lives with you across your Linux machines.
 
-> **Part of the axios ecosystem, but axios is not required.** This project ships as a home-manager module that works on any NixOS system with Claude Code installed. It integrates naturally with [axios](https://github.com/kcalvelli/axios) and [mcp-gateway](https://github.com/kcalvelli/mcp-gateway), but neither is a hard dependency.
+> **Part of the cairn ecosystem, but cairn is not required.** This project ships as a home-manager module that works on any NixOS system with Claude Code installed. It integrates naturally with [cairn](https://github.com/kcalvelli/cairn) and [mcp-gateway](https://github.com/kcalvelli/mcp-gateway), but neither is a hard dependency.
 
 ## What this is
 
-axios-companion is a thin wrapper that gives Claude Code three things it doesn't have out of the box:
+cairn-companion is a thin wrapper that gives Claude Code three things it doesn't have out of the box:
 
 1. **A persistent persona.** Response-format rules, user context, and (optionally) a full character voice that the agent adopts in every session. Your agent feels like the same person every time, not a stateless assistant.
 2. **A home on your filesystem.** A workspace directory for memory, reference data, and long-lived state that the agent can read, write, and evolve across sessions.
@@ -17,20 +17,20 @@ axios-companion is a thin wrapper that gives Claude Code three things it doesn't
 - **Not a new AI model.** Claude Code does all the actual thinking. This is a wrapper.
 - **Not a multi-tenant service.** Each user on each machine runs their own isolated instance using their own Claude subscription. There is no shared server, no accounts, no API tokens managed by this project.
 - **Not a replacement for Claude Code.** If you want a chat interface to Claude, use Claude Code directly. This project exists for people who want Claude Code to feel like a persistent AI agent with a consistent identity and local agency.
-- **Not axios-specific.** Despite the name, nothing here requires axios. The name reflects that this is the canonical companion for axios users — not an axios dependency.
+- **Not cairn-specific.** Despite the name, nothing here requires cairn. The name reflects that this is the canonical companion for cairn users — not an cairn dependency.
 
 ## Core commitments
 
 These are enforced in `openspec/config.yaml` as architectural rules and apply to every change proposal:
 
-- **Wrapper around claude-code, nothing more.** If Claude Code already does it, axios-companion doesn't reimplement it. Auth, tool execution, the agent loop, permission prompts, streaming — all belong to Claude Code.
+- **Wrapper around claude-code, nothing more.** If Claude Code already does it, cairn-companion doesn't reimplement it. Auth, tool execution, the agent loop, permission prompts, streaming — all belong to Claude Code.
 - **Per-user, home-manager only.** No system-level services, no `sid` system user, no multi-tenant infrastructure. Everything runs under the user's systemd slice with the user's own credentials.
 - **Tailscale for network trust.** When machines talk to each other (Tier 2), access control is network-level via Tailscale. No application-level auth, no tokens, no OAuth layer.
 - **Personality is opt-in.** The default persona that ships with this repo is deliberately character-free — only response format and citation rules. Users who want a voice bring their own persona files.
 
 ## Tiers
 
-axios-companion ships in opt-in tiers. You can stop at any tier and still have a working agent.
+cairn-companion ships in opt-in tiers. You can stop at any tier and still have a working agent.
 
 | Tier | What you get | What runs |
 |------|--------------|-----------|
@@ -45,22 +45,22 @@ See [ROADMAP.md](./ROADMAP.md) for the full build order and which OpenSpec propo
 
 > **Tier 0 is complete and most of Tier 1 is live.** The `companion` wrapper, the home-manager module, and the default character-free persona all work today. The Tier 1 daemon (`companion-core`) is running — systemd user service, D-Bus control plane, persistent session routing, streaming support, an OpenAI-compatible HTTP gateway for Home Assistant voice integration, a Rust CLI client, a ratatui TUI dashboard, and **three channel adapters: Telegram, XMPP, and email**. Remaining Tier 1 work: `channel-discord`, voice (STT+TTS), and a handful of deferred CLI subcommands. Layering your own character on top is covered in [Authoring a persona](#authoring-a-persona) below. See [ROADMAP.md](./ROADMAP.md) for what's next.
 
-Adding axios-companion to a NixOS + home-manager system looks like this:
+Adding cairn-companion to a NixOS + home-manager system looks like this:
 
 ```nix
 # flake.nix
 {
   inputs = {
-    axios-companion.url = "github:kcalvelli/axios-companion";
+    cairn-companion.url = "github:kcalvelli/cairn-companion";
     # ... your other inputs
   };
 }
 
 # home-manager configuration
 {
-  imports = [ inputs.axios-companion.homeManagerModules.default ];
+  imports = [ inputs.cairn-companion.homeManagerModules.default ];
 
-  services.axios-companion = {
+  services.cairn-companion = {
     enable = true;
 
     # Optional: start the Tier 1 daemon (D-Bus, session routing, streaming)
@@ -88,9 +88,9 @@ Everything after the wrapper's own injections is passthrough — any flag Claude
 
 The first time you invoke `companion` after enabling the module, the wrapper scaffolds your workspace:
 
-1. **Workspace directory created** at `$XDG_DATA_HOME/axios-companion/workspace` (typically `~/.local/share/axios-companion/workspace`) unless you set `services.axios-companion.workspaceDir` to a different path.
+1. **Workspace directory created** at `$XDG_DATA_HOME/cairn-companion/workspace` (typically `~/.local/share/cairn-companion/workspace`) unless you set `services.cairn-companion.workspaceDir` to a different path.
 2. **`README.md` written** into the workspace explaining what the directory is for — long-lived notes, reference material, memory the agent can read across sessions.
-3. **`USER.md` template written** — but only if you have *not* set `services.axios-companion.persona.userFile`. If you supplied your own user file via the module option, the wrapper skips scaffolding the template because your file is already the source of truth. If you didn't, the template lands with placeholder sections (`<your name>`, `<your role>`, etc.) that you fill in to give the agent context.
+3. **`USER.md` template written** — but only if you have *not* set `services.cairn-companion.persona.userFile`. If you supplied your own user file via the module option, the wrapper skips scaffolding the template because your file is already the source of truth. If you didn't, the template lands with placeholder sections (`<your name>`, `<your role>`, etc.) that you fill in to give the agent context.
 4. **Claude launches** with the composed persona as its system prompt, the workspace attached via `--add-dir`, and — if detected — your mcp-gateway config loaded.
 
 Subsequent invocations skip scaffolding entirely and do not touch anything in the workspace. You can edit `USER.md`, add new files, delete things, or rearrange the directory freely between runs — the wrapper treats the workspace as yours after that first invocation.
@@ -99,7 +99,7 @@ Subsequent invocations skip scaffolding entirely and do not touch anything in th
 
 When `daemon.enable = true`, the home-manager module installs and starts `companion-core` — a systemd user service that turns the one-shot wrapper into a live service:
 
-- **D-Bus control plane** on `org.axios.Companion` with methods for sending messages, streaming responses, listing sessions, and querying status
+- **D-Bus control plane** on `org.cairn.Companion` with methods for sending messages, streaming responses, listing sessions, and querying status
 - **Persistent session routing** — maps `(surface, conversation_id)` pairs to Claude sessions in SQLite, survives daemon restarts
 - **Turn serialization** — one subprocess per session at a time, concurrent sessions run in parallel
 - **Streaming** — `StreamMessage` returns immediately and emits `ResponseChunk` / `ResponseComplete` / `ResponseError` signals
@@ -111,12 +111,12 @@ The daemon invokes the same `companion` wrapper for every turn — it doesn't by
 systemctl --user status companion-core
 
 # Send a message via D-Bus
-busctl --user call org.axios.Companion /org/axios/Companion \
-  org.axios.Companion1 SendMessage sss "dbus" "test" "hello"
+busctl --user call org.cairn.Companion /org/cairn/Companion \
+  org.cairn.Companion1 SendMessage sss "dbus" "test" "hello"
 
 # List active sessions
-busctl --user call org.axios.Companion /org/axios/Companion \
-  org.axios.Companion1 ListSessions
+busctl --user call org.cairn.Companion /org/cairn/Companion \
+  org.cairn.Companion1 ListSessions
 
 # Watch the journal
 journalctl --user -u companion-core -f
@@ -129,7 +129,7 @@ The daemon is the foundation for all Tier 1 features — channel adapters, CLI c
 When `gateway.openai.enable = true`, the daemon starts an OpenAI-compatible HTTP server alongside the D-Bus interface. This restores the voice integration that Home Assistant's Conversation integration depends on — HA points at the gateway's `/v1/chat/completions` endpoint and uses it as the LLM backend for Assist voice pipelines.
 
 ```nix
-services.axios-companion = {
+services.cairn-companion = {
   enable = true;
   daemon.enable = true;
   gateway.openai = {
@@ -176,7 +176,7 @@ No authentication — Tailscale network trust is the access boundary, same as ev
 When the daemon is running, channel adapters let outside-the-terminal surfaces talk to the companion the same way the CLI does — they all dispatch through the same session router. Each adapter is opt-in and runs as an async task inside `companion-core`. Today the daemon ships four: **Telegram** (long-poll bot via teloxide), **XMPP** (native client for self-hosted Prosody/ejabberd via tokio-xmpp), **email** (IMAP poll + SMTP via async-imap + lettre, with RFC 5322 thread-root session keying), and **Discord** (Gateway WebSocket + REST via serenity, with DM and guild channel support).
 
 ```nix
-services.axios-companion = {
+services.cairn-companion = {
   enable = true;
   daemon.enable = true;
 
@@ -278,11 +278,11 @@ The wrapper auto-detects an mcp-gateway configuration at runtime and passes it t
 2. `$XDG_CONFIG_HOME/mcp/mcp_servers.json`
 3. `$HOME/.mcp.json`
 
-If none exist, the wrapper invokes Claude Code without `--mcp-config` and produces no warning — MCP tools are optional, not required. If you keep your mcp-gateway config somewhere else, set `services.axios-companion.mcpConfigFile` to the absolute path and the wrapper will use it exclusively, bypassing auto-detection.
+If none exist, the wrapper invokes Claude Code without `--mcp-config` and produces no warning — MCP tools are optional, not required. If you keep your mcp-gateway config somewhere else, set `services.cairn-companion.mcpConfigFile` to the absolute path and the wrapper will use it exclusively, bypassing auto-detection.
 
 ## Authoring a persona
 
-axios-companion is intentionally **Nix-declarative on the outside and rich-markdown on the inside**. You declare *which* files make up your persona in your home-manager config; the files themselves are plain markdown that you author and edit by hand. Nix is poor at holding paragraphs of character voice as attribute sets; markdown is poor at being reproducibly wired into a system configuration. This split lets each do what it's good at.
+cairn-companion is intentionally **Nix-declarative on the outside and rich-markdown on the inside**. You declare *which* files make up your persona in your home-manager config; the files themselves are plain markdown that you author and edit by hand. Nix is poor at holding paragraphs of character voice as attribute sets; markdown is poor at being reproducibly wired into a system configuration. This split lets each do what it's good at.
 
 ### The recommended five-file layout
 
@@ -318,10 +318,10 @@ personas/<name>/
 
 ### Wiring it into your config
 
-Drop the files wherever you keep your home-manager config — typically `~/.config/your-nix-config/personas/<name>/` — then reference them from `services.axios-companion.persona`:
+Drop the files wherever you keep your home-manager config — typically `~/.config/your-nix-config/personas/<name>/` — then reference them from `services.cairn-companion.persona`:
 
 ```nix
-services.axios-companion = {
+services.cairn-companion = {
   enable = true;
   persona = {
     userFile   = ../personas/sid/USER.md;
@@ -355,12 +355,12 @@ If you want different personas for different machines, different roles, or diffe
 
 ### Keeping the default
 
-If you enable `services.axios-companion` without setting `persona.userFile` or `persona.extraFiles`, you get a fully working agent with only the character-free default: response-format rules, citation conventions, and a placeholder `USER.md` template scaffolded into your workspace on first run for you to fill in. That's a perfectly valid deployment — the five-file layout is a recommended starting point for users who want a distinct character voice, not a requirement.
+If you enable `services.cairn-companion` without setting `persona.userFile` or `persona.extraFiles`, you get a fully working agent with only the character-free default: response-format rules, citation conventions, and a placeholder `USER.md` template scaffolded into your workspace on first run for you to fill in. That's a perfectly valid deployment — the five-file layout is a recommended starting point for users who want a distinct character voice, not a requirement.
 
 ## Repository layout
 
 ```
-axios-companion/
+cairn-companion/
 ├── flake.nix                   # Nix flake exposing the home-manager module
 ├── ROADMAP.md                  # Tiered build order with links to proposals
 ├── openspec/
@@ -376,7 +376,7 @@ axios-companion/
 │       ├── spoke-tools/        # Tier 2 machine-local MCP tool servers
 │       ├── distributed-routing/# Tier 2 hub/spoke multi-machine routing
 │       ├── gui-gtk4/           # Optional GUI
-│       └── axios-integration/  # Thin consumer-side proposal (lives in axios)
+│       └── cairn-integration/  # Thin consumer-side proposal (lives in cairn)
 ```
 
 Each change is a self-contained proposal with `proposal.md`, `specs/` describing behavior, and `tasks.md` with an implementation checklist. Shipped changes (`bootstrap`, `daemon-core`, `openai-gateway`, `cli-client`, `tui-dashboard`, `channel-telegram`, `channel-xmpp`, `channel-email`) are either fully drafted or archived. The remaining proposals are skeletons that get fleshed out when picked up.
@@ -401,7 +401,7 @@ cd openspec/changes/bootstrap   # start with the bootstrap proposal
 
 ## Related projects
 
-- **[axios](https://github.com/kcalvelli/axios)** — The NixOS-based distribution that axios-companion is primarily designed to integrate with
+- **[cairn](https://github.com/kcalvelli/cairn)** — The NixOS-based distribution that cairn-companion is primarily designed to integrate with
 - **[mcp-gateway](https://github.com/kcalvelli/mcp-gateway)** — MCP server aggregator; serves as the spoke daemon in Tier 2 distributed mode
 - **[Claude Code](https://docs.claude.com/en/docs/claude-code)** — The underlying agent runtime this project wraps
 

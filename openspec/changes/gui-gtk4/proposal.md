@@ -12,7 +12,7 @@ A GTK4 + libadwaita desktop application that provides a rich graphical view into
 
 ## Motivation
 
-The TUI dashboard (`tui-dashboard`) covers the majority of the dashboard use case for terminal-native users. But some users prefer a graphical app — for visual memory exploration, comfortable long-form reading of conversation history, mouse-driven session switching, and a persistent window in their workspace rather than a terminal buffer. On axios specifically, a libadwaita app would fit naturally into the GNOME HIG if the user is on a DE that respects it, and still runs fine (if as a "guest" application) on Niri + DankMaterialShell.
+The TUI dashboard (`tui-dashboard`) covers the majority of the dashboard use case for terminal-native users. But some users prefer a graphical app — for visual memory exploration, comfortable long-form reading of conversation history, mouse-driven session switching, and a persistent window in their workspace rather than a terminal buffer. On cairn specifically, a libadwaita app would fit naturally into the GNOME HIG if the user is on a DE that respects it, and still runs fine (if as a "guest" application) on Niri + DankMaterialShell.
 
 This proposal is explicitly last in the roadmap. It should NOT be started until Tiers 0, 1, and 2 are shipped and stable. The GUI is a value-add, not a foundation.
 

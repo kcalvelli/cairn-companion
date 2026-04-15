@@ -1,7 +1,7 @@
 schema: spec-driven
 
 context: |
-  axios-companion - A persistent, customizable persona wrapper around Claude Code.
+  cairn-companion - A persistent, customizable persona wrapper around Claude Code.
 
   Turns a user's existing Claude subscription into an AI agent that lives with them
   across their Linux machines — with a consistent persona, a home on the filesystem,
@@ -33,7 +33,7 @@ context: |
   - Supporting AI providers other than Claude via Claude Code
 
   Related projects:
-  - axios - NixOS-based distribution; canonical consumer of this module
+  - cairn - NixOS-based distribution; canonical consumer of this module
   - mcp-gateway - MCP server aggregator used as the spoke daemon in Tier 2
   - Claude Code - The agent runtime this project wraps
 
@@ -48,7 +48,7 @@ rules:
       exchange is out of scope and must be rejected
     - Per-User Only - all runtime components run as home-manager user services;
       proposals introducing system-level NixOS modules for companion runtime are
-      rejected (consumer-side integrations like the axios-integration proposal may
+      rejected (consumer-side integrations like the cairn-integration proposal may
       add system-level options, but the companion itself stays user-level)
     - Tailscale-First Networking - Tier 2 and later proposals that require network
       communication between machines MUST use Tailscale as the trust boundary and

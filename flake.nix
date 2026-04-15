@@ -1,5 +1,5 @@
 {
-  description = "axios-companion - A persistent, customizable persona wrapper around Claude Code";
+  description = "cairn-companion - A persistent, customizable persona wrapper around Claude Code";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -28,14 +28,14 @@
         };
     in
     {
-      # Overlay — exposes only the reference `axios-companion` wrapper build.
+      # Overlay — exposes only the reference `cairn-companion` wrapper build.
       # The default-persona package is implementation detail and deliberately
       # not promoted to overlay status.
       overlays.default = final: prev: {
-        axios-companion = self.packages.${final.system}.default;
+        cairn-companion = self.packages.${final.system}.default;
       };
 
-      # Home-Manager Module — exposes `services.axios-companion.*`. Imports
+      # Home-Manager Module — exposes `services.cairn-companion.*`. Imports
       # as a closure over `self` so the module can reach
       # `self.lib.${pkgs.system}.buildCompanion` when building the per-user
       # wrapper. See openspec/changes/bootstrap/specs/home-manager/spec.md.
@@ -62,7 +62,7 @@
           referenceCompanion = self.lib.${system}.buildCompanion {
             claudePackage = pkgs.claude-code;
             personaBasePackage = personaDefault;
-            defaultWorkspace = "__HOME__/.local/share/axios-companion/workspace";
+            defaultWorkspace = "__HOME__/.local/share/cairn-companion/workspace";
           };
         in
         {
@@ -116,7 +116,7 @@
 
             shellHook = ''
               echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-              echo "  axios-companion development environment"
+              echo "  cairn-companion development environment"
               echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
               echo ""
               echo "Roadmap:    cat ROADMAP.md"

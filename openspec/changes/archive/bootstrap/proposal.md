@@ -2,13 +2,13 @@
 
 ## Summary
 
-Ship the minimum viable `axios-companion` as a home-manager module exposing a `companion` shell wrapper around `claude -p`. The wrapper loads the user's persona files as a system prompt, attaches the user's workspace directory, and passes through any existing mcp-gateway configuration. No daemon, no channels, no persistent state beyond the workspace. This is the first shippable artifact: after it lands, any axios (or plain NixOS) user with Claude Code installed can enable a few lines of home-manager config and get a personalized AI companion invokable from any terminal.
+Ship the minimum viable `cairn-companion` as a home-manager module exposing a `companion` shell wrapper around `claude -p`. The wrapper loads the user's persona files as a system prompt, attaches the user's workspace directory, and passes through any existing mcp-gateway configuration. No daemon, no channels, no persistent state beyond the workspace. This is the first shippable artifact: after it lands, any cairn (or plain NixOS) user with Claude Code installed can enable a few lines of home-manager config and get a personalized AI companion invokable from any terminal.
 
 ## Motivation
 
 ### Current state
 
-axios users who want a persistent, customizable Claude Code experience today have two options, neither of which is good:
+cairn users who want a persistent, customizable Claude Code experience today have two options, neither of which is good:
 
 1. **Use `claude` directly with no persona.** Every session is a fresh assistant. No user context loads, no response format rules apply, no workspace is attached. The user either retypes context every time or accepts a generic assistant experience.
 2. **Run ZeroClaw/similar heavyweight agent frameworks.** These carry hundreds of thousands of lines of infrastructure for capabilities (multi-provider routing, distributed execution, plugin systems, hardware integration) that a single-user home Linux setup will never use. The fork-maintenance cost for a single user is disproportionate to the benefit.
@@ -25,7 +25,7 @@ That finding means the right first artifact is not a daemon. It is a shell wrapp
 
 Ship three things:
 
-1. **A home-manager module** at `modules/home-manager/default.nix` exposing `services.axios-companion` with options for enabling the module, selecting the Claude Code package, providing a user-specific context file, layering additional persona files, and setting the workspace directory.
+1. **A home-manager module** at `modules/home-manager/default.nix` exposing `services.cairn-companion` with options for enabling the module, selecting the Claude Code package, providing a user-specific context file, layering additional persona files, and setting the workspace directory.
 
 2. **A `companion` binary** built as a `pkgs.writeShellApplication` that resolves persona files (default base + user override + extras), concatenates them into a system prompt, locates the user's workspace directory (creating it on first run), and invokes `claude` with the correct flags:
    - `--append-system-prompt "$PERSONA"` — the merged persona content
@@ -37,10 +37,10 @@ Ship three things:
 
 ### Benefits
 
-1. **Ships a working product on day one.** Every axios user with Claude Code can enable the module and have a personalized companion immediately — no daemon to set up, no Tailscale to configure.
+1. **Ships a working product on day one.** Every cairn user with Claude Code can enable the module and have a personalized companion immediately — no daemon to set up, no Tailscale to configure.
 2. **Proves the architecture.** Tier 0 is the smallest viable slice of the overall design. If it works, every later tier is additive; if it doesn't, higher tiers are saved from building on a broken foundation.
 3. **Zero runtime cost.** No daemon, no background process, no memory footprint when the user isn't actively invoking it.
-4. **Composes with mcp-gateway.** If the user already runs mcp-gateway (as axios users typically do), the wrapper picks up its MCP config automatically, giving the companion access to every tool the user has already declared.
+4. **Composes with mcp-gateway.** If the user already runs mcp-gateway (as cairn users typically do), the wrapper picks up its MCP config automatically, giving the companion access to every tool the user has already declared.
 5. **Trivially testable.** A wrapper script has no state, no network dependencies, and no concurrency concerns. Testing is `companion "hello"` and reading the output.
 
 ### Trade-offs
@@ -56,12 +56,12 @@ Ship three things:
 
 - `modules/home-manager/default.nix` — declarative home-manager module with options:
   - `enable` — boolean
-  - `package` — the axios-companion package (default: self overlay)
+  - `package` — the cairn-companion package (default: self overlay)
   - `claudePackage` — the Claude Code CLI package (default: `pkgs.claude-code`)
   - `persona.basePackage` — package containing default persona files (default: self)
   - `persona.userFile` — optional path to user's own `USER.md` override
   - `persona.extraFiles` — list of additional persona markdown files to layer on
-  - `workspaceDir` — path to the companion workspace (default: `$XDG_DATA_HOME/axios-companion/workspace`)
+  - `workspaceDir` — path to the companion workspace (default: `$XDG_DATA_HOME/cairn-companion/workspace`)
   - `mcpConfigFile` — path to mcp-gateway config file (default: auto-detect common locations, null if absent)
 - `packages/companion/default.nix` — `pkgs.writeShellApplication` building the `companion` binary
 - `persona/default/AGENT.md` — minimal response format rules, no character voice
@@ -95,10 +95,10 @@ None. This is the first proposal and has no predecessors.
 
 ## Success criteria
 
-1. A user with a NixOS + home-manager system and Claude Code installed can enable `services.axios-companion` in their home configuration, run `home-manager switch`, and invoke `companion "hello"` successfully.
+1. A user with a NixOS + home-manager system and Claude Code installed can enable `services.cairn-companion` in their home configuration, run `home-manager switch`, and invoke `companion "hello"` successfully.
 2. The first invocation creates the workspace directory if it does not exist, with a `README.md` and the default `USER.md` template (unless the user provided one).
 3. Persona files resolve in the documented order: base → user override → extras (later files can reference or extend earlier ones via their content; the wrapper just concatenates).
 4. If mcp-gateway is running and its config file is at one of the auto-detected paths (or explicitly provided via `mcpConfigFile`), the companion can invoke tools from it.
 5. The `companion` binary is a pure passthrough for flags it does not consume — e.g. `companion --resume`, `companion --model claude-haiku-4-5`, `companion -p "prompt"` all work.
 6. `nix flake check` passes.
-7. A NixOS user who is *not* on axios can install axios-companion from its flake and have the exact same functionality (verify: no axios references in the module code, only in docs).
+7. A NixOS user who is *not* on cairn can install cairn-companion from its flake and have the exact same functionality (verify: no cairn references in the module code, only in docs).

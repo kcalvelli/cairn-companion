@@ -1,4 +1,4 @@
-//! companion-tui — terminal dashboard for the axios-companion daemon.
+//! companion-tui — terminal dashboard for the cairn-companion daemon.
 
 mod app;
 mod dbus;

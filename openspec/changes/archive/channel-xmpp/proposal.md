@@ -12,14 +12,14 @@ Add an XMPP channel adapter for users running their own XMPP server (common in s
 
 ## Motivation
 
-XMPP is the open federated chat protocol with mature self-hosted server implementations (Prosody, ejabberd). Users who run their own XMPP server for family or small group communication (the typical axios user profile) can integrate their companion as another contact in the same chat system their family already uses — no separate app, no third-party service, no account creation.
+XMPP is the open federated chat protocol with mature self-hosted server implementations (Prosody, ejabberd). Users who run their own XMPP server for family or small group communication (the typical cairn user profile) can integrate their companion as another contact in the same chat system their family already uses — no separate app, no third-party service, no account creation.
 
 ## Scope
 
 ### In scope
 
 - XMPP adapter inside the daemon using a Rust XMPP library
-- Home-manager options under `services.axios-companion.channels.xmpp`:
+- Home-manager options under `services.cairn-companion.channels.xmpp`:
   - `enable`
   - `jid` — the bot's full JID
   - `passwordFile`

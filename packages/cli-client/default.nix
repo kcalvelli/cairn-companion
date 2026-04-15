@@ -1,8 +1,8 @@
-# companion-cli — the Rust CLI for axios-companion.
+# companion-cli — the Rust CLI for cairn-companion.
 #
 # Provides `companion` binary that talks to the daemon via D-Bus.
 # Replaces the Tier 0 shell wrapper on the user's PATH when
-# services.axios-companion.cli.enable = true.
+# services.cairn-companion.cli.enable = true.
 {
   lib,
   rustPlatform,
@@ -21,7 +21,7 @@ rustPlatform.buildRustPackage {
   buildInputs = [ dbus ];
 
   meta = {
-    description = "axios-companion CLI — command-line interface for the companion daemon";
+    description = "cairn-companion CLI — command-line interface for the companion daemon";
     license = lib.licenses.mit;
     platforms = lib.platforms.linux;
   };
