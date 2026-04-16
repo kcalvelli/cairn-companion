@@ -409,10 +409,14 @@ async fn cmd_sessions_show(surface: &str, conversation_id: &str) -> i32 {
             0
         }
         Err(e) => {
-            // zbus wraps fdo errors; the not-found variant prints with a
-            // "FileNotFound" tag which is accurate if ugly. Strip it.
+            // zbus renders the fdo NotFound error as
+            // "org.freedesktop.DBus.Error.FileNotFound: <msg>". The tag
+            // is accurate but shows D-Bus plumbing the user didn't ask
+            // to see. Strip it so the user just reads our message.
             let msg = e.to_string();
-            let msg = msg.strip_prefix("FileNotFound: ").unwrap_or(&msg);
+            let msg = msg
+                .strip_prefix("org.freedesktop.DBus.Error.FileNotFound: ")
+                .unwrap_or(&msg);
             eprintln!("companion: {msg}");
             1
         }
