@@ -255,6 +255,13 @@ in
         --since window. Read-only. Runs on the mcp-gateway host —
         reads that host's user journal
       '';
+
+      tools.apps.enable = lib.mkEnableOption ''
+        the `apps` tool — open URLs (xdg-open) and launch .desktop
+        entries (dex). Fire-and-forget. Runs on the mcp-gateway
+        host, so the browser / app opens on THAT host's display,
+        not the caller's
+      '';
     };
 
     channels.telegram = {
@@ -775,6 +782,13 @@ in
       services.mcp-gateway.servers.companion-journal = {
         enable = true;
         command = "${cfg.spoke.package}/bin/companion-mcp-journal";
+      };
+    })
+
+    (lib.mkIf (cfg.spoke.enable && cfg.spoke.tools.apps.enable) {
+      services.mcp-gateway.servers.companion-apps = {
+        enable = true;
+        command = "${cfg.spoke.package}/bin/companion-mcp-apps";
       };
     })
   ]);

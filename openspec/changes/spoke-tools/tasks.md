@@ -139,10 +139,21 @@ edge's home-manager config, not in shared user config files.
 
 ## Phase 5: `apps`
 
-- [ ] **5.1** `src/bin/apps.rs` with `open_url`, `launch_desktop_entry`.
-- [ ] **5.2** `xdg-open` for URLs, `gtk-launch` for `.desktop` entries.
-- [ ] **5.3** Home-manager wiring.
-- [ ] **5.4** Live test.
+- [x] **5.1** `src/bin/apps.rs` with two tools: `open_url` (required
+  `url`) and `launch_desktop_entry` (required `name`). Both
+  fire-and-forget, stdio redirected to null so the forked child
+  can't hold the JSON-RPC pipe open past our exit.
+- [x] **5.2** `xdg-open` for URLs. Switched from `gtk-launch` to
+  `dex -a` for desktop entries because gtk-launch only ships inside
+  the full gtk3 package (~30 MB closure for one binary), and dex
+  is tiny + purpose-built + has name-based lookup.
+- [x] **5.3** Home-manager gets `spoke.tools.apps.enable` +
+  auto-registration as `companion-apps`. `xdg-utils` and `dex`
+  added to buildInputs and wrapped onto the apps binary's PATH.
+- [x] **5.4** Pre-deploy stdio smoke: tools/list returns both
+  descriptors, bad-entry call returns a clear actionable error with
+  `isError: true`. Happy-path (real URL, real app) pending Keith's
+  rebuild + live test.
 
 ## Phase 6: `niri`
 
