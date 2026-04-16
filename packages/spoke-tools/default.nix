@@ -15,6 +15,7 @@
   rustPlatform,
   makeWrapper,
   libnotify,
+  grim,
 }:
 rustPlatform.buildRustPackage {
   pname = "companion-spoke-tools";
@@ -26,17 +27,20 @@ rustPlatform.buildRustPackage {
 
   nativeBuildInputs = [ makeWrapper ];
 
-  # The libnotify package provides notify-send. Listed here as a build
-  # input so it ends up in the package's runtime closure; makeWrapper
-  # below prepends its bin dir to PATH.
-  buildInputs = [ libnotify ];
+  # Per-tool shell-outs — libnotify → notify-send, grim → screenshots.
+  # Each tool's runtime PATH is wrapped below so the shell-out resolves
+  # regardless of the mcp-gateway unit's inherited PATH.
+  buildInputs = [
+    libnotify
+    grim
+  ];
 
-  # Wrap each binary with its per-tool runtime PATH. Currently only
-  # notify; future tools (screenshot, clipboard, niri, etc.) add their
-  # own wrap step here.
   postInstall = ''
     wrapProgram $out/bin/companion-mcp-notify \
       --prefix PATH : ${lib.makeBinPath [ libnotify ]}
+
+    wrapProgram $out/bin/companion-mcp-screenshot \
+      --prefix PATH : ${lib.makeBinPath [ grim ]}
   '';
 
   meta = {

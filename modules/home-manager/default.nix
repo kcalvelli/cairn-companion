@@ -235,6 +235,13 @@ in
         daemon is running on the user's Wayland session (mako, DMS,
         etc.). Fire-and-forget
       '';
+
+      tools.screenshot.enable = lib.mkEnableOption ''
+        the `screenshot` tool — full-display capture via grim.
+        Returns the PNG as MCP ImageContent so multimodal-capable
+        clients can describe or reason about what's on screen. Runs
+        on the mcp-gateway host — captures that host's display
+      '';
     };
 
     channels.telegram = {
@@ -734,6 +741,13 @@ in
       services.mcp-gateway.servers.companion-notify = {
         enable = true;
         command = "${cfg.spoke.package}/bin/companion-mcp-notify";
+      };
+    })
+
+    (lib.mkIf (cfg.spoke.enable && cfg.spoke.tools.screenshot.enable) {
+      services.mcp-gateway.servers.companion-screenshot = {
+        enable = true;
+        command = "${cfg.spoke.package}/bin/companion-mcp-screenshot";
       };
     })
   ]);

@@ -51,29 +51,50 @@ first tool is what proves the scaffolding works.
 - [x] **0.10** `cargo check` clean, 6/6 tests passing.
 - [x] **0.11** `nix build .#companion-spoke-tools` green.
 - [x] **0.12** `nix flake check` green.
-- [x] **0.13** Pre-deploy stdio smoke test: piped
-  `initialize` + `tools/list` + `tools/call notify` at the wrapped
-  binary, got three valid JSON-RPC responses and a visible desktop
-  notification on edge. The full home-manager deploy test (consumer
-  adds `spoke.enable` + `spoke.tools.notify.enable`, rebuilds, runs
-  `companion "send me a notification..."` and the mcp-gw tool
-  registry exposes `companion-notify`) is pending a rebuild of a
-  consuming host.
+- [x] **0.13** Full end-to-end on edge 2026-04-16:
+  - `services.cairn-companion.spoke = { enable = true;
+    tools.notify.enable = true; };` added to edge's `home-manager.users.keith`
+    block (not NixOS level — cairn-companion's module is home-manager).
+  - `nixos-rebuild switch --flake .#edge` green.
+  - `mcp-gw --json list` shows `companion-notify` with status
+    `connected` and `enabled: true` after mcp-gateway restart.
+  - `companion "send me a desktop notification that says hello from sid"`
+    triggered a visible notification on edge's desktop. Confirmed.
+
+**Architecture note recorded during live test:** Keith's mcp-gateway
+is centralized — one instance on edge serves the fleet via Tailscale
+Serve. Spoke tools at this tier execute wherever the gateway runs
+(always edge), regardless of which host the caller sat at. That
+distributed-routing limitation is an explicit non-goal for this
+change; see the `distributed-routing` Tier 2 phase 2 proposal. The
+`services.cairn-companion.spoke` block therefore only belongs in
+edge's home-manager config, not in shared user config files.
 
 ## Phase 2: `screenshot`
 
-- [ ] **2.1** Add `src/bin/screenshot.rs` with tools: `screenshot_full`,
-  `screenshot_region` (requires user to draw region via `slurp`),
-  `screenshot_window` (focused window only).
-- [ ] **2.2** Shell out to `grim` for capture, pipe through `slurp` for
-  region selection. Write to a tempfile, base64-encode, return as
-  MCP `ImageContent` with `mimeType: "image/png"`.
-- [ ] **2.3** `default.nix` adds `grim`, `slurp` to the package's
-  runtime PATH via `makeWrapper`.
-- [ ] **2.4** Home-manager `spoke.tools.screenshot.enable` + auto-
-  registration as `companion-screenshot`.
-- [ ] **2.5** Live test: `companion "take a screenshot and tell me
-  what's on screen"` returns the image, Claude describes it correctly.
+- [x] **2.1** `src/bin/screenshot.rs` with one tool: `screenshot_full`
+  (no args). Region and window variants deferred — region requires
+  `slurp` for interactive selection (not a flow Sid can drive), and
+  window requires `niri msg focused-window` geometry parsing (better
+  to land niri tool first). Full-screen is the canonical multimodal
+  demo; the other two land in a follow-up.
+- [x] **2.2** Shell out to `grim -` (PNG to stdout, no tempfile
+  juggling), base64-encode via `base64` 0.22's STANDARD engine, wrap
+  in `ok_image(data, "image/png")`.
+- [x] **2.3** `default.nix` adds `grim` to `buildInputs` and wraps
+  `companion-mcp-screenshot`'s PATH with `grim/bin`.
+- [x] **2.4** Home-manager `spoke.tools.screenshot.enable` + auto-
+  registration as `services.mcp-gateway.servers.companion-screenshot`.
+- [x] **2.5** Pre-deploy stdio smoke: piped `initialize` + `tools/call
+  screenshot_full` at the wrapped binary, got valid JSON-RPC
+  `ImageContent` with a base64-encoded PNG (verified the data starts
+  with `iVBORw0KGgo` = PNG magic). Full end-to-end test (consumer
+  rebuilds edge, enables `tools.screenshot.enable = true`, restarts
+  mcp-gateway, runs `companion "describe what's on my screen"`)
+  pending Keith's rebuild.
+- [ ] **2.6** Follow-up: `screenshot_region` (slurp-interactive) +
+  `screenshot_window` (niri focused-window geometry). Deferred to a
+  later commit; not blocking Phase 2 shipment.
 
 ## Phase 3: `clipboard`
 
