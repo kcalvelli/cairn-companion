@@ -21,6 +21,15 @@
   xdg-utils,
   dex,
   niri,
+  # Shell-tool inspection toolkit — see the `companion-mcp-shell`
+  # wrapProgram below for the rationale.
+  coreutils,
+  git,
+  gnugrep,
+  ripgrep,
+  procps,
+  file,
+  which,
 }:
 rustPlatform.buildRustPackage {
   pname = "companion-spoke-tools";
@@ -40,11 +49,15 @@ rustPlatform.buildRustPackage {
   #   xdg-utils    → xdg-open                (apps: open_url)
   #   dex          → desktop-entry launcher  (apps: launch_desktop_entry)
   #   niri         → compositor IPC          (niri: all tools)
-  # The `shell` tool has no bundled runtime deps — it spawns whatever
-  # the operator's allowlist permits, directly from the process's
-  # inherited PATH. That's the correct behavior for an allowlisted
-  # command runner: the allowlist is the gate, PATH is just how the
-  # binary gets found.
+  # The `shell` tool bundles a small inspection toolkit (coreutils,
+  # git, grep, ripgrep, procps, file, which) on its wrapped PATH.
+  # mcp-gateway's service PATH is narrow and doesn't include most of
+  # these, so without the bundle the allowlist and the reachable set
+  # disagree: Keith allowlists `git`, Sid calls it, spawn fails with
+  # ENOENT because git isn't resolvable. For commands outside this
+  # bundle (nix, systemctl, etc.), the allowlist + the inherited
+  # PATH handle it — those are already reachable through
+  # /run/current-system/sw/bin or the service's own PATH entries.
   # Each tool's runtime PATH is wrapped below so the shell-out resolves
   # regardless of the mcp-gateway unit's inherited PATH.
   buildInputs = [
@@ -55,6 +68,13 @@ rustPlatform.buildRustPackage {
     xdg-utils
     dex
     niri
+    coreutils
+    git
+    gnugrep
+    ripgrep
+    procps
+    file
+    which
   ];
 
   postInstall = ''
@@ -75,6 +95,11 @@ rustPlatform.buildRustPackage {
 
     wrapProgram $out/bin/companion-mcp-niri \
       --prefix PATH : ${lib.makeBinPath [ niri ]}
+
+    wrapProgram $out/bin/companion-mcp-shell \
+      --prefix PATH : ${lib.makeBinPath [
+        coreutils git gnugrep ripgrep procps file which
+      ]}
   '';
 
   meta = {

@@ -226,7 +226,26 @@ async fn run(allowlist: &Allowlist, args: &Value) -> Value {
                 argv = ?command,
                 "spawn failed: {e}"
             );
-            return err_text(format!("failed to spawn {basename}: {e}"));
+            // ENOENT is the common failure mode — binary isn't on the
+            // mcp-gateway process's PATH. Raw error text is "No such
+            // file or directory", which gets confused with "command
+            // not allowlisted" by callers who aren't reading carefully.
+            // Surface the distinction explicitly.
+            let msg = if e.raw_os_error() == Some(2) {
+                format!(
+                    "binary \"{basename}\" is on the allowlist but not \
+                     resolvable on the mcp-gateway process's PATH. \
+                     Either pass the full path (e.g. \
+                     `[\"/run/current-system/sw/bin/{basename}\", ...]`) \
+                     or ask Keith to add the binary's containing \
+                     package to the shell tool's wrapped PATH in \
+                     spoke-tools/default.nix. This is NOT an allowlist \
+                     rejection — the allowlist permits it."
+                )
+            } else {
+                format!("failed to spawn {basename}: {e}")
+            };
+            return err_text(msg);
         }
     };
 
