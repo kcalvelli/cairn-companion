@@ -64,17 +64,17 @@ The adapter connects to Discord's Gateway using serenity's client, which handles
 ## Phase 8: Deploy, live test, docs, archive
 
 - [x] **8.1** README channel adapters section updated with Discord config block, shared rules updated for four adapters, Discord-specific notes section added.
-- [ ] **8.2** Operator-side: create Discord bot application, enable Message Content intent, generate token, store in agenix, invite bot to target guild(s), configure home-manager options.
-- [ ] **8.3** Live test, DM from allowlisted user: send a DM. Expect a reply within a few seconds. Journal shows `trust=Owner`.
-- [ ] **8.4** Live test, DM from non-allowlisted user: expect reply at `TrustLevel::Anonymous`, no tool calls.
-- [ ] **8.5** Live test, guild @mention: mention the bot in a guild channel. Expect a reply with the mention stripped from the dispatch body.
-- [ ] **8.6** Live test, guild non-mention (mentionOnly=true): send a message without mentioning the bot. Expect no reply.
-- [ ] **8.7** Live test, streaming: in single_message mode, observe the message being edited as the response streams in.
-- [ ] **8.8** Live test, long response: ask a question that generates >2000 chars. Expect clean splits.
-- [ ] **8.9** Live test, bang command: send `!status` from a DM. Expect status reply, not a dispatched turn.
-- [ ] **8.10** Live test, bot loop prevention: confirm the bot never responds to its own messages.
-- [ ] **8.11** ROADMAP.md flipped: `channel-discord` marked `[x]` with shipped-on date.
-- [ ] **8.12** Archive: `mv openspec/changes/channel-discord openspec/changes/archive/channel-discord`.
+- [x] **8.2** Operator-side: Discord bot application reused from ZeroClaw, Message Content intent already enabled, token in agenix (`discord-bot-token.age`), `services.cairn-companion.channels.discord` wired in `hosts/mini.nix` with `allowedUserIds = [1005082256878092339]` (Keith).
+- [x] **8.3** Live test, DM from allowlisted user: verified 2026-04-16 08:50:50 — journal shows `discord DM` then `turn complete` 3s later.
+- [ ] **8.4** Live test, DM from non-allowlisted user: **deferred** — requires a second Discord account not on the allowlist. Dropped from v1 shipping criteria; trust branching is unit-tested and the Anonymous code path is exercised by guild messages (see 8.5).
+- [x] **8.5** Live test, guild @mention: verified 2026-04-16 09:01:13 — journal shows `discord guild message` then `turn complete` 5s later, reply dispatched at `TrustLevel::Anonymous`.
+- [x] **8.6** Live test, guild non-mention (mentionOnly=true): verified 2026-04-16 — no journal log emitted because `mention_only && !mentioned` returns at `mod.rs:118` before the log line.
+- [x] **8.7** Live test, streaming: verified 2026-04-16 08:51:36 — 78-second streamed response via edit-in-place (combined with 8.8).
+- [x] **8.8** Live test, long response: verified 2026-04-16 — Commodore 64 essay request produced clean 2000-char splits.
+- [x] **8.9** Live test, bang command: verified 2026-04-16 08:51:00 — `!status` DM produced `discord DM` log but no `turn complete`, confirming bang-command early return at `mod.rs:100-102` without dispatch.
+- [x] **8.10** Live test, bot loop prevention: implicitly verified — `msg.author.bot` check at `mod.rs:61` is the first statement in `message()`, drops self/other-bot messages before logging or dispatch. 2 hours of uptime with only 4 human-paced events confirms no self-trigger loop.
+- [x] **8.11** ROADMAP.md flipped: `channel-discord` marked `[x]` with shipped-on date 2026-04-16.
+- [x] **8.12** Archive: `mv openspec/changes/channel-discord openspec/changes/archive/channel-discord`.
 
 ## Decisions deferred to follow-up
 
