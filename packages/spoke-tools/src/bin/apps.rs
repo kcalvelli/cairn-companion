@@ -120,6 +120,7 @@ async fn launch_desktop_entry(args: &Value) -> Value {
 
     let status = match tokio::process::Command::new("dex")
         .args(["-a", entry])
+        .env("XDG_DATA_DIRS", nixos_xdg_data_dirs())
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -133,13 +134,56 @@ async fn launch_desktop_entry(args: &Value) -> Value {
     if !status.success() {
         return err_text(format!(
             "dex could not launch \"{entry}\" (exit {}). \
-             Check the entry name — dex looks in ~/.local/share/applications \
-             and /usr/share/applications for a matching .desktop file.",
+             Check the entry name — dex looks for .desktop files in the \
+             user's local applications dir and NixOS's per-user / system \
+             profile share dirs.",
             status.code().map(|c| c.to_string()).unwrap_or_else(|| "signal".into())
         ));
     }
 
     ok_text(format!("Launched {entry}."))
+}
+
+/// Build an `XDG_DATA_DIRS` value that covers the NixOS canonical
+/// locations for desktop entries:
+///   - `$HOME/.local/share`              — user-level (XDG spec)
+///   - `$HOME/.nix-profile/share`        — per-user nix profile
+///   - `/etc/profiles/per-user/$USER/share` — NixOS per-user profile
+///                                          (where user-installed
+///                                          home-manager packages land)
+///   - `/run/current-system/sw/share`    — NixOS system profile
+///   - `/usr/local/share:/usr/share`     — freedesktop fallback
+///
+/// mcp-gateway's systemd unit does not set XDG_DATA_DIRS at all, so
+/// dex would otherwise fall back to just `/usr/share:/usr/local/share`
+/// — which on NixOS does not exist, and user-installed apps (ghostty,
+/// firefox, whatever you `home.packages` into your profile) are
+/// invisible. This function is the reason `launch_desktop_entry
+/// ghostty` works on a NixOS box at all.
+///
+/// If the existing env already has a `XDG_DATA_DIRS` set (e.g.,
+/// someone runs the tool interactively from a login shell), we prefer
+/// that — their session probably knows better than we do. Otherwise
+/// we construct the NixOS-style default.
+fn nixos_xdg_data_dirs() -> String {
+    if let Ok(existing) = std::env::var("XDG_DATA_DIRS") {
+        if !existing.is_empty() {
+            return existing;
+        }
+    }
+
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
+    let user = std::env::var("USER").unwrap_or_else(|_| "root".into());
+
+    [
+        format!("{home}/.local/share"),
+        format!("{home}/.nix-profile/share"),
+        format!("/etc/profiles/per-user/{user}/share"),
+        "/run/current-system/sw/share".to_string(),
+        "/usr/local/share".to_string(),
+        "/usr/share".to_string(),
+    ]
+    .join(":")
 }
 
 #[tokio::main(flavor = "current_thread")]
