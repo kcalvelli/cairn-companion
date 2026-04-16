@@ -27,13 +27,19 @@ impl ToolHandler for Journal {
         vec![
             tool_def(
                 "journal_read",
-                "Read lines from the user's systemd journal (journalctl --user). \
-                 Optional filters: `unit` (a user service name, e.g. \
-                 `companion-core` or `mcp-gateway` — call `journal_list_units` \
-                 first if you don't know the exact name), `since` (any value \
-                 journalctl accepts: `10 minutes ago`, `1 hour ago`, `today`, \
-                 an ISO timestamp, etc.), and `lines` (default 100, max 1000). \
-                 Returns newest-first.",
+                "Read the USER systemd journal (`journalctl --user`). This is \
+                 the ONLY way to read logs for user-scope services — \
+                 `companion-core`, `mcp-gateway`, `wireplumber`, \
+                 `vdirsyncer-sync`, or anything managed by `systemctl --user`. \
+                 System-level log tools (e.g. sentinel's view_logs) read the \
+                 system journal and WILL NOT find these services — a \
+                 wrong-scope query returns empty, looking exactly like a real \
+                 outage but isn't one. Optional filters: `unit` (exact user \
+                 service name, no .service suffix — call `journal_list_units` \
+                 if you don't know it), `since` (any journalctl `--since` \
+                 value: `10 minutes ago`, `1 hour ago`, `today`, ISO \
+                 timestamps), `lines` (default 100, max 1000). Returns \
+                 newest-first.",
                 json!({
                     "type": "object",
                     "properties": {
@@ -58,8 +64,11 @@ impl ToolHandler for Journal {
             ),
             tool_def(
                 "journal_list_units",
-                "List the user's systemd services (names only). Use this to \
-                 discover the exact unit name to pass to `journal_read`.",
+                "List all user-scope systemd services on this host (names only, \
+                 from `systemctl --user list-unit-files --type=service`). Use \
+                 this to discover the exact unit name to pass to `journal_read` \
+                 before guessing. These are USER services only — system \
+                 services are a different scope and belong to sentinel.",
                 json!({ "type": "object", "properties": {} }),
             ),
         ]
