@@ -326,23 +326,38 @@ async fn cmd_sessions_list() -> i32 {
                 println!("No sessions.");
                 return 0;
             }
+
+            // Full, copy-pasteable values — no truncation. Size each column
+            // to the widest value so alignment survives any mix of surfaces
+            // (short like "cli", long like "telegram") and conversation
+            // IDs (numeric chat IDs vs full UUIDs).
+            let headers = ("SURFACE", "CONVERSATION", "CLAUDE SESSION", "STATUS", "LAST ACTIVE");
+            let rows: Vec<(String, String, String, String, String)> = sessions
+                .into_iter()
+                .map(|(surface, conv_id, claude_id, status, last_active)| {
+                    (
+                        surface,
+                        conv_id,
+                        if claude_id.is_empty() { "-".into() } else { claude_id },
+                        status,
+                        format_timestamp(last_active),
+                    )
+                })
+                .collect();
+
+            let w_surface = rows.iter().map(|r| r.0.len()).max().unwrap_or(0).max(headers.0.len());
+            let w_conv = rows.iter().map(|r| r.1.len()).max().unwrap_or(0).max(headers.1.len());
+            let w_claude = rows.iter().map(|r| r.2.len()).max().unwrap_or(0).max(headers.2.len());
+            let w_status = rows.iter().map(|r| r.3.len()).max().unwrap_or(0).max(headers.3.len());
+
             println!(
-                "{:<12} {:<16} {:<24} {:<10} {}",
-                "SURFACE", "CONVERSATION", "CLAUDE SESSION", "STATUS", "LAST ACTIVE"
+                "{:<w_surface$}  {:<w_conv$}  {:<w_claude$}  {:<w_status$}  {}",
+                headers.0, headers.1, headers.2, headers.3, headers.4
             );
-            for (surface, conv_id, claude_id, status, last_active) in sessions {
-                let claude_display = if claude_id.is_empty() {
-                    "-".into()
-                } else {
-                    truncate(&claude_id, 22)
-                };
+            for (surface, conv_id, claude, status, last_active) in rows {
                 println!(
-                    "{:<12} {:<16} {:<24} {:<10} {}",
-                    surface,
-                    truncate(&conv_id, 14),
-                    claude_display,
-                    status,
-                    format_timestamp(last_active),
+                    "{:<w_surface$}  {:<w_conv$}  {:<w_claude$}  {:<w_status$}  {}",
+                    surface, conv_id, claude, status, last_active
                 );
             }
             0
@@ -493,13 +508,5 @@ fn format_timestamp(unix: u32) -> String {
         format!("{}h ago", ago / 3600)
     } else {
         format!("{}d ago", ago / 86400)
-    }
-}
-
-fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
-        s.to_string()
-    } else {
-        format!("{}...", &s[..max.saturating_sub(3)])
     }
 }
