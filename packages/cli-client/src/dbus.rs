@@ -31,6 +31,17 @@ pub trait Companion {
     /// List all sessions: (surface, conversation_id, claude_session_id, status, last_active_at).
     async fn list_sessions(&self) -> zbus::Result<Vec<(String, String, String, String, u32)>>;
 
+    /// Fetch one session's full details:
+    /// (surface, conversation_id, claude_session_id, status, created_at, last_active_at, metadata).
+    async fn get_session(
+        &self,
+        surface: &str,
+        conversation_id: &str,
+    ) -> zbus::Result<(String, String, String, String, u32, u32, String)>;
+
+    /// Delete a session. Returns true if a row was removed.
+    async fn delete_session(&self, surface: &str, conversation_id: &str) -> zbus::Result<bool>;
+
     /// Daemon status as a string-keyed property map.
     async fn get_status(
         &self,

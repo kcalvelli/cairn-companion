@@ -3,7 +3,8 @@ mod dbus;
 use std::io::{self, BufRead, Write};
 use std::os::unix::process::CommandExt;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::Shell;
 use futures_util::StreamExt;
 
 #[derive(Parser)]
@@ -40,12 +41,40 @@ enum Command {
     },
     /// List active conversation surfaces
     Surfaces,
+    /// Tail the daemon's systemd journal
+    Logs {
+        /// Follow the log (tail -f)
+        #[arg(short, long)]
+        follow: bool,
+        /// Filter lines by surface or pattern (journalctl --grep)
+        #[arg(long)]
+        surface: Option<String>,
+    },
+    /// Emit a shell completion script
+    Completions {
+        /// Shell to generate completions for
+        shell: Shell,
+    },
 }
 
 #[derive(Subcommand)]
 enum SessionAction {
     /// List all sessions
     List,
+    /// Show details for one session
+    Show {
+        /// Surface the session belongs to (e.g. "telegram", "discord", "cli")
+        surface: String,
+        /// Conversation ID within that surface
+        conversation_id: String,
+    },
+    /// Delete a session
+    Delete {
+        /// Surface the session belongs to
+        surface: String,
+        /// Conversation ID within that surface
+        conversation_id: String,
+    },
 }
 
 const SURFACE: &str = "cli";
@@ -59,8 +88,21 @@ async fn main() {
         Some(Command::Status) => cmd_status().await,
         Some(Command::Sessions { action }) => match action {
             SessionAction::List => cmd_sessions_list().await,
+            SessionAction::Show {
+                surface,
+                conversation_id,
+            } => cmd_sessions_show(&surface, &conversation_id).await,
+            SessionAction::Delete {
+                surface,
+                conversation_id,
+            } => cmd_sessions_delete(&surface, &conversation_id).await,
         },
         Some(Command::Surfaces) => cmd_surfaces().await,
+        Some(Command::Logs { follow, surface }) => cmd_logs(follow, surface.as_deref()),
+        Some(Command::Completions { shell }) => {
+            cmd_completions(shell);
+            0
+        }
         None => {
             let prompt = cli.send.prompt;
             if prompt.is_empty() {
@@ -331,6 +373,86 @@ async fn cmd_surfaces() -> i32 {
             1
         }
     }
+}
+
+async fn cmd_sessions_show(surface: &str, conversation_id: &str) -> i32 {
+    let proxy = connect_or_die().await;
+
+    match proxy.get_session(surface, conversation_id).await {
+        Ok((surface, conv_id, claude_id, status, created_at, last_active_at, metadata)) => {
+            println!("session {surface}/{conv_id}");
+            println!("  status:         {status}");
+            println!(
+                "  claude session: {}",
+                if claude_id.is_empty() { "-" } else { &claude_id }
+            );
+            println!("  created:        {}", format_timestamp(created_at));
+            println!("  last active:    {}", format_timestamp(last_active_at));
+            if !metadata.is_empty() {
+                println!("  metadata:       {metadata}");
+            }
+            0
+        }
+        Err(e) => {
+            // zbus wraps fdo errors; the not-found variant prints with a
+            // "FileNotFound" tag which is accurate if ugly. Strip it.
+            let msg = e.to_string();
+            let msg = msg.strip_prefix("FileNotFound: ").unwrap_or(&msg);
+            eprintln!("companion: {msg}");
+            1
+        }
+    }
+}
+
+async fn cmd_sessions_delete(surface: &str, conversation_id: &str) -> i32 {
+    let proxy = connect_or_die().await;
+
+    match proxy.delete_session(surface, conversation_id).await {
+        Ok(true) => {
+            println!("deleted {surface}/{conversation_id}");
+            0
+        }
+        Ok(false) => {
+            eprintln!("companion: no such session {surface}/{conversation_id}");
+            1
+        }
+        Err(e) => {
+            eprintln!("companion: delete failed: {e}");
+            1
+        }
+    }
+}
+
+/// Tail the daemon's user-journal. Shells out to journalctl — no daemon-side
+/// RPC needed. `--follow` maps to `-f`; `--surface <pat>` maps to `--grep <pat>`
+/// which journalctl interprets as a PCRE filter.
+fn cmd_logs(follow: bool, surface: Option<&str>) -> i32 {
+    let mut cmd = std::process::Command::new("journalctl");
+    cmd.args(["--user", "-u", "companion-core"]);
+    if follow {
+        cmd.arg("-f");
+    } else {
+        // Non-follow mode: show the last chunk, not the whole journal.
+        cmd.args(["-n", "200"]);
+    }
+    if let Some(pat) = surface {
+        cmd.args(["--grep", pat]);
+    }
+
+    let status = match cmd.status() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("companion: failed to run journalctl: {e}");
+            return 1;
+        }
+    };
+    status.code().unwrap_or(1)
+}
+
+fn cmd_completions(shell: Shell) {
+    let mut cmd = Cli::command();
+    let bin_name = cmd.get_name().to_string();
+    clap_complete::generate(shell, &mut cmd, bin_name, &mut io::stdout());
 }
 
 /// Stable conversation ID for this terminal session. Reuses an existing

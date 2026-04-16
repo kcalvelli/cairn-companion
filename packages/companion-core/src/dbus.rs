@@ -183,6 +183,50 @@ impl CompanionInterface {
         Ok(status)
     }
 
+    /// Fetch one session's full details.
+    ///
+    /// Returns the full session row as a tuple — same shape as list_sessions'
+    /// element type, extended with created_at and metadata. Empty strings
+    /// stand in for NULL claude_session_id / metadata.
+    async fn get_session(
+        &self,
+        surface: &str,
+        conversation_id: &str,
+    ) -> zbus::fdo::Result<(String, String, String, String, u32, u32, String)> {
+        let store = self.dispatcher.store().await;
+        let session = store
+            .lookup_session(surface, conversation_id)
+            .map_err(|e| zbus::fdo::Error::Failed(format!("session store error: {e}")))?
+            .ok_or_else(|| {
+                zbus::fdo::Error::FileNotFound(format!(
+                    "no session for surface={surface} conversation_id={conversation_id}"
+                ))
+            })?;
+
+        Ok((
+            session.surface,
+            session.conversation_id,
+            session.claude_session_id.unwrap_or_default(),
+            session.status,
+            session.created_at as u32,
+            session.last_active_at as u32,
+            session.metadata.unwrap_or_default(),
+        ))
+    }
+
+    /// Delete a session by (surface, conversation_id). Returns true if a row
+    /// was removed, false if no such session existed.
+    async fn delete_session(
+        &self,
+        surface: &str,
+        conversation_id: &str,
+    ) -> zbus::fdo::Result<bool> {
+        let store = self.dispatcher.store().await;
+        store
+            .delete_session(surface, conversation_id)
+            .map_err(|e| zbus::fdo::Error::Failed(format!("session store error: {e}")))
+    }
+
     /// Return list of unique surface IDs that have active sessions.
     async fn get_active_surfaces(&self) -> zbus::fdo::Result<Vec<String>> {
         let store = self.dispatcher.store().await;
