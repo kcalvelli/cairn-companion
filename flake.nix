@@ -41,6 +41,10 @@
       # wrapper. See openspec/changes/bootstrap/specs/home-manager/spec.md.
       homeManagerModules.default = import ./modules/home-manager { inherit self; };
 
+      # NixOS Module — system-level concerns (memory sync via Syncthing).
+      nixosModules.default = ./modules/nixos;
+      nixosModules.sync = ./modules/nixos;
+
       # Packages.
       #
       #   .default         — the reference companion build, using
