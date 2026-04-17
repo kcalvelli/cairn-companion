@@ -41,6 +41,55 @@ let
     mkdir -p $out/bin
     ln -s ${builtCompanion}/bin/companion $out/bin/companion-code
   '';
+
+  # Standard HTTP ports per spoke tool. Used by both the systemd service
+  # generation (http.port defaults) and fleet auto-registration (peer URLs).
+  # These must stay in sync with the option defaults below.
+  defaultPorts = {
+    shell      = 18790;
+    journal    = 18791;
+    notify     = 18792;
+    screenshot = 18793;
+    clipboard  = 18794;
+    apps       = 18795;
+    niri       = 18796;
+  };
+
+  # Tools that need a running Wayland/compositor session. Their HTTP
+  # services must start after graphical-session.target so they pick up
+  # WAYLAND_DISPLAY, NIRI_SOCKET, DBUS_SESSION_BUS_ADDRESS, etc.
+  sessionTools = [ "notify" "screenshot" "clipboard" "apps" "niri" ];
+
+  # All spoke tool names, for iteration.
+  allTools = [ "notify" "screenshot" "clipboard" "journal" "apps" "niri" "shell" ];
+
+  # Build the spoke-servers.json content: local HTTP spokes + fleet peers.
+  localSpokeServers = lib.listToAttrs (lib.concatMap (tool:
+    let toolCfg = cfg.spoke.tools.${tool}; in
+    lib.optional toolCfg.http.enable {
+      name = "companion-${tool}";
+      value = {
+        type = "http";
+        url = "http://localhost:${toString toolCfg.http.port}/mcp";
+      };
+    }
+  ) allTools);
+
+  peerSpokeServers = lib.listToAttrs (lib.concatLists (
+    lib.mapAttrsToList (peer: peerCfg:
+      map (tool: {
+        name = "${peer}-companion-${tool}";
+        value = {
+          type = "http";
+          url = "http://${peer}.${cfg.fleet.domain}:${toString defaultPorts.${tool}}/mcp";
+        };
+      }) peerCfg.spokes
+    ) cfg.fleet.peers
+  ));
+
+  spokeServersJson = builtins.toJSON {
+    mcpServers = localSpokeServers // peerSpokeServers;
+  };
 in
 {
   options.services.cairn-companion = {
@@ -346,6 +395,52 @@ in
           enable = lib.mkEnableOption "HTTP transport for shell (remote access over Tailscale)";
           port = lib.mkOption { type = lib.types.port; default = 18790; description = "Listen port for HTTP MCP server"; };
         };
+      };
+    };
+
+    # Fleet-aware spoke discovery. Declare which peers export HTTP
+    # spokes and the module auto-registers them with the local
+    # mcp-gateway. No manual per-host server entries needed.
+    fleet = {
+      hostname = lib.mkOption {
+        type = lib.types.str;
+        default = "";
+        description = ''
+          This host's name in the fleet. Currently informational —
+          used in log messages and assertions, not for self-filtering
+          (peers already excludes self by design).
+        '';
+      };
+
+      domain = lib.mkOption {
+        type = lib.types.str;
+        default = "";
+        description = ''
+          Tailscale MagicDNS domain suffix. Peer URLs are constructed
+          as http://{peer}.{domain}:{port}/mcp. Leave empty to disable
+          fleet auto-registration.
+        '';
+      };
+
+      peers = lib.mkOption {
+        type = lib.types.attrsOf (lib.types.submodule {
+          options.spokes = lib.mkOption {
+            type = lib.types.listOf (lib.types.enum [
+              "notify" "screenshot" "clipboard" "journal" "apps" "niri" "shell"
+            ]);
+            default = [ ];
+            description = ''
+              Spoke tools this peer exports over HTTP transport.
+              Each listed tool generates an mcp-gateway server entry:
+              {peer}-companion-{tool} → http://{peer}.{domain}:{port}/mcp
+            '';
+          };
+        });
+        default = { };
+        description = ''
+          Remote hosts whose HTTP spoke tools should be auto-registered
+          with the local mcp-gateway. Only list peers — not this host.
+        '';
       };
     };
 
@@ -895,16 +990,20 @@ in
       };
     })
 
-    # HTTP transport — long-running spoke servers for remote access.
+    # HTTP transport — long-running spoke servers for local and remote access.
     #
     # Each enabled http sub-option generates a systemd user service
-    # running the spoke binary in HTTP mode. Remote gateways connect
-    # to these via `transport = "http"` + `url` in their own
-    # mcp-gateway config. Tailscale is the trust boundary.
+    # running the spoke binary in HTTP mode. Session-dependent tools
+    # (notify, screenshot, clipboard, apps, niri) start after
+    # graphical-session.target so they inherit Wayland env vars.
+    # Session-independent tools (journal, shell) start at default.target.
 
     (lib.mkIf (cfg.spoke.enable && cfg.spoke.tools.notify.http.enable) {
       systemd.user.services."companion-mcp-notify-http" = {
-        Unit.Description = "companion-mcp-notify (HTTP transport)";
+        Unit = {
+          Description = "companion-mcp-notify (HTTP transport)";
+          After = [ "graphical-session.target" ];
+        };
         Service = {
           ExecStart = "${cfg.spoke.package}/bin/companion-mcp-notify";
           Environment = [
@@ -914,13 +1013,16 @@ in
           Restart = "on-failure";
           RestartSec = 5;
         };
-        Install.WantedBy = [ "default.target" ];
+        Install.WantedBy = [ "graphical-session.target" ];
       };
     })
 
     (lib.mkIf (cfg.spoke.enable && cfg.spoke.tools.screenshot.http.enable) {
       systemd.user.services."companion-mcp-screenshot-http" = {
-        Unit.Description = "companion-mcp-screenshot (HTTP transport)";
+        Unit = {
+          Description = "companion-mcp-screenshot (HTTP transport)";
+          After = [ "graphical-session.target" ];
+        };
         Service = {
           ExecStart = "${cfg.spoke.package}/bin/companion-mcp-screenshot";
           Environment = [
@@ -930,13 +1032,16 @@ in
           Restart = "on-failure";
           RestartSec = 5;
         };
-        Install.WantedBy = [ "default.target" ];
+        Install.WantedBy = [ "graphical-session.target" ];
       };
     })
 
     (lib.mkIf (cfg.spoke.enable && cfg.spoke.tools.clipboard.http.enable) {
       systemd.user.services."companion-mcp-clipboard-http" = {
-        Unit.Description = "companion-mcp-clipboard (HTTP transport)";
+        Unit = {
+          Description = "companion-mcp-clipboard (HTTP transport)";
+          After = [ "graphical-session.target" ];
+        };
         Service = {
           ExecStart = "${cfg.spoke.package}/bin/companion-mcp-clipboard";
           Environment = [
@@ -946,7 +1051,7 @@ in
           Restart = "on-failure";
           RestartSec = 5;
         };
-        Install.WantedBy = [ "default.target" ];
+        Install.WantedBy = [ "graphical-session.target" ];
       };
     })
 
@@ -968,7 +1073,10 @@ in
 
     (lib.mkIf (cfg.spoke.enable && cfg.spoke.tools.apps.http.enable) {
       systemd.user.services."companion-mcp-apps-http" = {
-        Unit.Description = "companion-mcp-apps (HTTP transport)";
+        Unit = {
+          Description = "companion-mcp-apps (HTTP transport)";
+          After = [ "graphical-session.target" ];
+        };
         Service = {
           ExecStart = "${cfg.spoke.package}/bin/companion-mcp-apps";
           Environment = [
@@ -978,13 +1086,16 @@ in
           Restart = "on-failure";
           RestartSec = 5;
         };
-        Install.WantedBy = [ "default.target" ];
+        Install.WantedBy = [ "graphical-session.target" ];
       };
     })
 
     (lib.mkIf (cfg.spoke.enable && cfg.spoke.tools.niri.http.enable) {
       systemd.user.services."companion-mcp-niri-http" = {
-        Unit.Description = "companion-mcp-niri (HTTP transport)";
+        Unit = {
+          Description = "companion-mcp-niri (HTTP transport)";
+          After = [ "graphical-session.target" ];
+        };
         Service = {
           ExecStart = "${cfg.spoke.package}/bin/companion-mcp-niri";
           Environment = [
@@ -994,7 +1105,7 @@ in
           Restart = "on-failure";
           RestartSec = 5;
         };
-        Install.WantedBy = [ "default.target" ];
+        Install.WantedBy = [ "graphical-session.target" ];
       };
     })
 
@@ -1013,6 +1124,13 @@ in
         };
         Install.WantedBy = [ "default.target" ];
       };
+    })
+
+    # Spoke servers config — direct MCP config file for Claude Code.
+    # Local HTTP spokes at localhost + fleet peer spokes at Tailscale
+    # addresses. Bypasses mcp-gateway entirely for spoke tools.
+    (lib.mkIf (cfg.spoke.enable && (localSpokeServers != { } || peerSpokeServers != { })) {
+      xdg.configFile."cairn-companion/spoke-servers.json".text = spokeServersJson;
     })
   ]);
 }

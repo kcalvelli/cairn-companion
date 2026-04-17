@@ -154,6 +154,9 @@ writeShellApplication {
       done
     fi
 
+    # --- Spoke servers (direct HTTP, bypasses mcp-gateway) -------------------
+    SPOKE_CONFIG="''${XDG_CONFIG_HOME:-$HOME/.config}/cairn-companion/spoke-servers.json"
+
     # --- Invoke claude ------------------------------------------------------
 
     args=(
@@ -169,6 +172,9 @@ writeShellApplication {
     # positional from being consumed.
     if [ -n "$MCP_CONFIG" ]; then
       args+=("--mcp-config=$MCP_CONFIG")
+    fi
+    if [ -f "$SPOKE_CONFIG" ]; then
+      args+=("--mcp-config=$SPOKE_CONFIG")
     fi
 
     exec claude "''${args[@]}" "$@"
