@@ -25,7 +25,16 @@
 
 ## Phase 4: Verification
 
-- [ ] End-to-end: start a spoke in HTTP mode, hit it with curl
-- [ ] End-to-end: configure edge's mcp-gateway with a remote HTTP spoke on mini
-- [ ] Update proposal.md status
-- [ ] Update ROADMAP.md
+- [x] End-to-end: start a spoke in HTTP mode, hit it with curl
+- [x] End-to-end: edge→mini and mini→edge spoke calls over HTTP
+- [x] Update proposal.md status
+- [x] Update ROADMAP.md
+
+## Phase 5: Direct HTTP config (bypass gateway)
+
+- [x] Fleet config option (`services.cairn-companion.fleet`) — peers, domain, hostname
+- [x] Generate `spoke-servers.json` — local HTTP spokes + fleet peer entries
+- [x] Companion wrapper passes spoke-servers.json as second `--mcp-config`
+- [x] Session-dependent HTTP services use `After=graphical-session.target`
+- [x] Remove spoke stdio registration on edge (spokes no longer route through gateway)
+- [x] Verified: mini Sid launches Brave on edge, sends notifications cross-host

@@ -1,6 +1,6 @@
 # Proposal: Spoke HTTP Transport — Remote Spoke Tools Over Tailscale
 
-> **Status**: Implementation complete — pending end-to-end verification on mini.
+> **Status**: Complete. Shipped 2026-04-17. Verified bidirectional (edge↔mini) including cross-host browser launch and notifications from Telegram. Architecture evolved beyond original proposal — spokes bypass mcp-gateway entirely via direct HTTP config.
 
 ## Tier
 
@@ -108,8 +108,8 @@ edge points at mini's URLs.
 ## Success criteria
 
 1. [x] `MCP_TRANSPORT=http MCP_HTTP_BIND=0.0.0.0:18790 companion-mcp-shell` starts an HTTP server that responds to JSON-RPC over POST — 5 HTTP transport tests passing
-2. [ ] Edge's mcp-gateway configured with `mini-companion-shell` as an HTTP transport entry can list and call the tool
-3. [ ] A Claude Code session on edge can invoke `mini-companion-shell__run` and the command executes on mini
+2. [x] Edge's spoke-servers.json configured with `mini-companion-shell` as direct HTTP entry can list and call the tool
+3. [x] A Claude Code session on edge can invoke `mini-companion-shell__run` and the command executes on mini
 4. [x] Home-manager module generates systemd user services for HTTP-mode spokes — per-tool http.enable + http.port options
 5. [x] Nix flake check passes
 6. [x] Spoke tools in stdio mode are unchanged — 6 original tests passing, all binaries compile
