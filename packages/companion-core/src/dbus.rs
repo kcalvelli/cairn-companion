@@ -32,13 +32,11 @@ impl CompanionInterface {
 
     /// Resolve the Claude Code project memory directory for the workspace.
     /// Claude Code slugifies the absolute workspace path: replace `/` with `-`,
-    /// then strip leading dots from path components (so `/.local/` becomes `--local-`).
+    /// then strip all `.` characters (so `/.local/` becomes `--local-`).
     /// The memory lives at `~/.claude/projects/<slug>/memory/`.
     fn memory_dir(&self) -> PathBuf {
         let workspace = self.dispatcher.workspace_dir();
-        let slug = format!("-{}", workspace.to_string_lossy().replace('/', "-"));
-        // Claude Code strips leading dots from path components: `-.` → `-`
-        let slug = slug.replace("-.", "-");
+        let slug = workspace.to_string_lossy().replace('/', "-").replace('.', "");
         let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
         PathBuf::from(home)
             .join(".claude")
