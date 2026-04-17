@@ -1,6 +1,6 @@
 # Proposal: CLI Client — Tier 1 Rich Command-Line Interface
 
-> **Status**: Active — core subcommands shipped (send, chat, status, sessions list, surfaces, stdin mode). Deferred: logs, session show/resume/delete, memory, shell completions, passthrough mode.
+> **Status**: Active — core subcommands shipped (send, chat, status, sessions list/show/delete, surfaces, stdin mode, logs, completions, memory list/show/index). Deferred: session resume, passthrough mode.
 
 ## Tier
 

@@ -35,7 +35,8 @@ Work proceeds roughly top-to-bottom. Items at the same level can be built in par
 ### Tier 2 — Distributed agency
 
 - [x] **[spoke-tools](./openspec/changes/archive/spoke-tools/)** — MCP tool servers exposing local machine capabilities via mcp-gateway. Shipped 2026-04-16. Seven binaries in one cargo package (notify, screenshot, clipboard, journal, apps, niri, shell), hand-rolled JSON-RPC MCP stdio shell (no SDK crate), each registered as a `services.mcp-gateway.servers.companion-<tool>` via home-manager. Shell tool has allowlist-enforced execution with per-invocation audit logging to the user journal. Central-gateway caveat: all tools execute on whichever host runs mcp-gateway (edge in Keith's fleet), regardless of which host the caller sat at — distributed-routing is the fix when that becomes painful. Verified end-to-end on edge: notify fires, screenshot returns multimodal PNGs Sid describes accurately, clipboard round-trips, journal reads user units, apps launches URLs and .desktop entries, niri moves windows/workspaces, shell executes allowlisted commands with audit trail. *Depends on: bootstrap. Standalone-useful even without distributed-routing.*
-- [ ] **[distributed-routing](./openspec/changes/distributed-routing/)** — Hub daemon learns to route tool calls to multiple spokes over Tailscale with active-spoke presence tracking. *Depends on: bootstrap, daemon-core, spoke-tools, cli-client*
+- [x] **[memory-tier](./openspec/changes/archive/memory-tier/)** — Shared persistent memory across machines. Shipped 2026-04-17. Pins daemon-spawned Claude Code to workspace-as-cwd for stable project memory slug. Exposes memory read-only over D-Bus (list, read, index). CLI `companion memory list|show|index`. TUI memory panel (3/m to toggle). NixOS module for Syncthing-based cross-machine sync. Daemon regenerates MEMORY.md from frontmatter locally (`.stignore` prevents sync conflicts on the index). Verified bidirectional propagation between edge and mini — writes, deletes, and index updates all sync cleanly. *Depends on: bootstrap, daemon-core, cli-client, tui-dashboard.*
+- [ ] **[distributed-routing](./openspec/changes/distributed-routing/)** — Hub daemon learns to route tool calls to multiple spokes over Tailscale with active-spoke presence tracking. Deprioritized: shared memory + per-machine mcp-gateway covers the actual fleet use case (edge for hands-on, mini for channel adapters). Revisit if cross-machine tool routing becomes painful. *Depends on: bootstrap, daemon-core, spoke-tools, cli-client*
 
 ### Optional polish
 
@@ -63,7 +64,7 @@ Every proposal must honor these rules:
 
 - **Wrapper around claude-code only.** If Claude Code already does it, we don't reimplement it.
 - **No separate auth layer.** User's existing claude-code credentials + Tailscale network trust are the only auth mechanisms.
-- **Per-user home-manager only.** No system-level NixOS modules for companion runtime.
+- **Per-user home-manager for runtime.** System-level NixOS modules only for infrastructure concerns (e.g., Syncthing sync) that cannot live in user scope.
 - **Character-free default persona.** Personality is opt-in via user-supplied files.
 - **Tier discipline.** Proposals declare their tier and don't depend on tiers above themselves.
 

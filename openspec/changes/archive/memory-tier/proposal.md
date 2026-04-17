@@ -1,6 +1,6 @@
 # Proposal: Memory Tier — Surfacing Claude Code's Project Memory
 
-> **Status**: Active — Phase 1 (cwd pinning + D-Bus methods), Phase 2 (CLI), and Phase 3 (TUI panel) implemented. Pending: live verification after deploy.
+> **Status**: Shipped 2026-04-17. All phases complete. cwd pinning, D-Bus memory methods, CLI subcommand, TUI panel, Syncthing-based cross-machine sync with local index regeneration. Verified live on edge + mini with bidirectional propagation.
 
 ## Tier
 
