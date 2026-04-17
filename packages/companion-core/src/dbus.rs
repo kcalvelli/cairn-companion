@@ -401,6 +401,10 @@ impl CompanionInterface {
             let path = entry.path();
             if path.is_file() {
                 let name = entry.file_name().to_string_lossy().into_owned();
+                // Skip dotfiles (.stignore) and conflict artifacts.
+                if name.starts_with('.') || name.contains(".sync-conflict-") {
+                    continue;
+                }
                 let meta = entry.metadata().unwrap_or_else(|_| {
                     std::fs::metadata(&path).expect("metadata")
                 });
