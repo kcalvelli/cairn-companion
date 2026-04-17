@@ -157,6 +157,7 @@ writeShellApplication {
     # --- Invoke claude ------------------------------------------------------
 
     args=(
+      --permission-mode bypassPermissions
       --append-system-prompt "$PERSONA"
       --add-dir "$WORKSPACE"
     )
