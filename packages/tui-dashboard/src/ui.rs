@@ -26,23 +26,31 @@ pub fn draw(f: &mut Frame, app: &App) {
     }
 }
 
-/// Main area: sessions panel (left) + conversation panel (right).
+/// Main area layout depends on active focus.
 fn draw_main(f: &mut Frame, app: &App, area: Rect) {
     if !app.connected {
         draw_disconnected(f, area);
         return;
     }
 
-    let cols = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(30), // sessions
-            Constraint::Percentage(70), // conversation
-        ])
-        .split(area);
+    match app.focus {
+        Focus::Memory => {
+            // Memory gets the full main area.
+            draw_memory_panel(f, app, area);
+        }
+        _ => {
+            let cols = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(30), // sessions
+                    Constraint::Percentage(70), // conversation
+                ])
+                .split(area);
 
-    draw_sessions_panel(f, app, cols[0]);
-    draw_conversation_panel(f, app, cols[1]);
+            draw_sessions_panel(f, app, cols[0]);
+            draw_conversation_panel(f, app, cols[1]);
+        }
+    }
 }
 
 /// Disconnected state — full area message.
@@ -195,6 +203,70 @@ fn draw_conversation_panel(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(para, area);
 }
 
+/// Memory panel — full-width split: file list (left) + content (right).
+fn draw_memory_panel(f: &mut Frame, app: &App, area: Rect) {
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(30), // file list
+            Constraint::Percentage(70), // content
+        ])
+        .split(area);
+
+    // Left: file list.
+    let list_block = Block::default()
+        .borders(Borders::ALL)
+        .title(" memory files ")
+        .border_style(Style::default().fg(Color::Cyan));
+
+    if app.memory_files.is_empty() {
+        let text = Paragraph::new(Span::styled(
+            "  no memory yet",
+            Style::default().fg(Color::DarkGray),
+        ))
+        .block(list_block);
+        f.render_widget(text, cols[0]);
+    } else {
+        let rows: Vec<Row> = app
+            .memory_files
+            .iter()
+            .enumerate()
+            .map(|(i, entry)| {
+                let style = if i == app.selected_memory {
+                    Style::default()
+                        .bg(Color::DarkGray)
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+                Row::new(vec![Cell::from(entry.name.clone())]).style(style)
+            })
+            .collect();
+
+        let table = Table::new(rows, [Constraint::Min(1)])
+            .block(list_block);
+        f.render_widget(table, cols[0]);
+    }
+
+    // Right: selected file content.
+    let title = match app.selected_memory_name() {
+        Some(name) => format!(" {} ", name),
+        None => " (none) ".to_string(),
+    };
+    let content_block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .border_style(Style::default().fg(Color::Cyan));
+
+    let para = Paragraph::new(app.memory_content.as_str())
+        .block(content_block)
+        .wrap(Wrap { trim: false })
+        .scroll((app.memory_scroll, 0));
+
+    f.render_widget(para, cols[1]);
+}
+
 /// Bottom status bar.
 fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
     let status = &app.daemon_status;
@@ -245,14 +317,19 @@ fn draw_help_overlay(f: &mut Frame, area: Rect) {
     let help_text = vec![
         Line::from(""),
         Line::from("  j/k       navigate sessions"),
-        Line::from("  Tab       switch panel focus"),
+        Line::from("  Tab       cycle panel focus"),
         Line::from("  1         focus sessions"),
         Line::from("  2         focus conversation"),
+        Line::from("  3/m       focus memory"),
         Line::from(""),
         Line::from("  In conversation panel:"),
         Line::from("  j/k       scroll up/down"),
-        Line::from("  g         scroll to top"),
-        Line::from("  G         scroll to bottom"),
+        Line::from("  g/G       scroll to top/bottom"),
+        Line::from(""),
+        Line::from("  In memory panel:"),
+        Line::from("  j/k       select file"),
+        Line::from("  J/K       scroll content"),
+        Line::from("  g/G       content top/bottom"),
         Line::from(""),
         Line::from("  ?         toggle this help"),
         Line::from("  q         quit"),

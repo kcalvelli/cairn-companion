@@ -43,9 +43,9 @@ async fn main() {
         let home = std::env::var("HOME").expect("HOME not set");
         format!("{home}/.local/share")
     });
-    let db_path = std::path::PathBuf::from(data_dir)
-        .join("cairn-companion")
-        .join("sessions.db");
+    let companion_dir = std::path::PathBuf::from(&data_dir).join("cairn-companion");
+    let db_path = companion_dir.join("sessions.db");
+    let workspace_dir = companion_dir.join("workspace");
 
     let store = match store::SessionStore::open(&db_path) {
         Ok(s) => {
@@ -84,7 +84,7 @@ async fn main() {
     };
 
     // 4. Initialize the dispatcher.
-    let dispatcher = Arc::new(dispatcher::Dispatcher::new(store, anonymous_settings));
+    let dispatcher = Arc::new(dispatcher::Dispatcher::new(store, anonymous_settings, workspace_dir));
     info!("dispatcher ready");
 
     // 5. Acquire the D-Bus well-known name on the session bus.

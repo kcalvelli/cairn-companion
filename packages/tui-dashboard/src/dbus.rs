@@ -37,6 +37,15 @@ pub trait Companion {
     /// Surfaces with at least one active session.
     async fn get_active_surfaces(&self) -> zbus::Result<Vec<String>>;
 
+    /// Memory files: (filename, size_bytes, mtime_epoch).
+    async fn list_memory_files(&self) -> zbus::Result<Vec<(String, u64, i64)>>;
+
+    /// Read a single memory file by name.
+    async fn read_memory_file(&self, name: &str) -> zbus::Result<String>;
+
+    /// MEMORY.md index contents, or empty string if not yet created.
+    async fn get_memory_index(&self) -> zbus::Result<String>;
+
     #[zbus(signal)]
     fn response_chunk(surface: &str, conversation_id: &str, chunk: &str);
 

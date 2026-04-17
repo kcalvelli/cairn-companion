@@ -3,6 +3,7 @@
 //! Translates D-Bus method calls into dispatcher TurnRequests and maps
 //! TurnEvents back to D-Bus replies or signals.
 
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -27,6 +28,20 @@ impl CompanionInterface {
             start_time: Instant::now(),
             in_flight: Arc::new(AtomicU32::new(0)),
         }
+    }
+
+    /// Resolve the Claude Code project memory directory for the workspace.
+    /// Claude Code slugifies the absolute workspace path: replace `/` with `-`,
+    /// prepend `-`. The memory lives at `~/.claude/projects/<slug>/memory/`.
+    fn memory_dir(&self) -> PathBuf {
+        let workspace = self.dispatcher.workspace_dir();
+        let slug = format!("-{}", workspace.to_string_lossy().replace('/', "-"));
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
+        PathBuf::from(home)
+            .join(".claude")
+            .join("projects")
+            .join(slug)
+            .join("memory")
     }
 }
 
@@ -242,6 +257,85 @@ impl CompanionInterface {
         surfaces.sort();
         surfaces.dedup();
         Ok(surfaces)
+    }
+
+    // -- Memory --
+
+    /// Return the resolved path to Claude Code's project memory directory
+    /// for the workspace. Returns empty string if the directory doesn't
+    /// exist yet (no session has written memory).
+    async fn get_memory_path(&self) -> zbus::fdo::Result<String> {
+        let path = self.memory_dir();
+        Ok(if path.is_dir() {
+            path.to_string_lossy().into_owned()
+        } else {
+            String::new()
+        })
+    }
+
+    /// List memory files: Vec<(filename, size_bytes, mtime_epoch)>.
+    /// Returns empty if the memory directory doesn't exist.
+    async fn list_memory_files(&self) -> zbus::fdo::Result<Vec<(String, u64, i64)>> {
+        let dir = self.memory_dir();
+        if !dir.is_dir() {
+            return Ok(Vec::new());
+        }
+
+        let mut entries = Vec::new();
+        let read_dir = std::fs::read_dir(&dir).map_err(|e| {
+            zbus::fdo::Error::Failed(format!("failed to read memory dir: {e}"))
+        })?;
+
+        for entry in read_dir.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                let meta = entry.metadata().unwrap_or_else(|_| {
+                    std::fs::metadata(&path).expect("metadata")
+                });
+                let size = meta.len();
+                let mtime = meta
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0);
+                entries.push((name, size, mtime));
+            }
+        }
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(entries)
+    }
+
+    /// Read a single memory file's contents. Returns FileNotFound if
+    /// the file doesn't exist (or the memory dir itself doesn't exist).
+    async fn read_memory_file(&self, name: &str) -> zbus::fdo::Result<String> {
+        // Reject path traversal
+        if name.contains('/') || name.contains('\\') || name == ".." || name == "." {
+            return Err(zbus::fdo::Error::InvalidArgs(
+                "filename must not contain path separators".into(),
+            ));
+        }
+        let path = self.memory_dir().join(name);
+        std::fs::read_to_string(&path).map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => {
+                zbus::fdo::Error::FileNotFound(format!("memory file not found: {name}"))
+            }
+            _ => zbus::fdo::Error::Failed(format!("failed to read {name}: {e}")),
+        })
+    }
+
+    /// Return the MEMORY.md index contents. Returns empty string if
+    /// the index doesn't exist yet.
+    async fn get_memory_index(&self) -> zbus::fdo::Result<String> {
+        let path = self.memory_dir().join("MEMORY.md");
+        match std::fs::read_to_string(&path) {
+            Ok(content) => Ok(content),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+            Err(e) => Err(zbus::fdo::Error::Failed(format!(
+                "failed to read MEMORY.md: {e}"
+            ))),
+        }
     }
 
     // -- Signals --

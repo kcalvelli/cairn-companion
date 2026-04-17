@@ -17,7 +17,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use tokio::time::interval;
 
-use app::{App, DaemonStatus, Focus, SessionRow};
+use app::{App, DaemonStatus, Focus, MemoryEntry, SessionRow};
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 const EVENT_POLL: Duration = Duration::from_millis(50);
 
@@ -41,6 +41,8 @@ enum AppEvent {
         conversation_id: String,
         error: String,
     },
+    MemoryFilesUpdate(Vec<MemoryEntry>),
+    MemoryContentUpdate(String),
     Connected,
     Disconnected,
 }
@@ -56,6 +58,8 @@ async fn main() -> io::Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+    // Watch channel: main loop tells the poller which memory file to fetch.
+    let (memory_selection_tx, memory_selection_rx) = tokio::sync::watch::channel::<String>(String::new());
 
     // Keyboard input task.
     let tx_keys = tx.clone();
@@ -73,6 +77,7 @@ async fn main() -> io::Result<()> {
 
     // D-Bus poller + signal subscriber task.
     let tx_dbus = tx.clone();
+    let mem_sel_rx = memory_selection_rx;
     tokio::spawn(async move {
         loop {
             // Try to connect.
@@ -132,6 +137,21 @@ async fn main() -> io::Result<()> {
                                         break;
                                     }
                                 }
+                                // Poll memory files and load selected content.
+                                if let Ok(files) = proxy.list_memory_files().await {
+                                    let entries: Vec<MemoryEntry> = files
+                                        .into_iter()
+                                        .map(|(name, size, mtime)| MemoryEntry { name, size, mtime })
+                                        .collect();
+                                    let _ = tx_dbus.send(AppEvent::MemoryFilesUpdate(entries));
+                                }
+                                // Fetch currently selected memory file content.
+                                let selected = mem_sel_rx.borrow().clone();
+                                if !selected.is_empty() {
+                                    if let Ok(content) = proxy.read_memory_file(&selected).await {
+                                        let _ = tx_dbus.send(AppEvent::MemoryContentUpdate(content));
+                                    }
+                                }
                             }
                             Some(signal) = chunks.next() => {
                                 if let Ok(args) = signal.args() {
@@ -177,7 +197,15 @@ async fn main() -> io::Result<()> {
 
         if let Some(event) = rx.recv().await {
             match event {
-                AppEvent::Key(key) => handle_key(&mut app, key),
+                AppEvent::Key(key) => {
+                    handle_key(&mut app, key);
+                    // Sync memory selection after key handling.
+                    if app.focus == Focus::Memory {
+                        if let Some(name) = app.selected_memory_name() {
+                            let _ = memory_selection_tx.send(name.to_string());
+                        }
+                    }
+                }
                 AppEvent::Connected => {
                     app.connected = true;
                     app.flash_message = None;
@@ -192,6 +220,16 @@ async fn main() -> io::Result<()> {
                 }
                 AppEvent::SessionsUpdate(sessions) => {
                     app.update_sessions(sessions);
+                }
+                AppEvent::MemoryFilesUpdate(files) => {
+                    app.update_memory_files(files);
+                    // Tell the poller which file to fetch on next tick.
+                    if let Some(name) = app.selected_memory_name() {
+                        let _ = memory_selection_tx.send(name.to_string());
+                    }
+                }
+                AppEvent::MemoryContentUpdate(content) => {
+                    app.memory_content = content;
                 }
                 AppEvent::Chunk {
                     surface,
@@ -274,6 +312,10 @@ fn handle_key(app: &mut App, key: event::KeyEvent) {
             app.focus = Focus::Conversation;
             return;
         }
+        KeyCode::Char('3') | KeyCode::Char('m') if !app.show_help => {
+            app.focus = Focus::Memory;
+            return;
+        }
         _ => {}
     }
 
@@ -297,6 +339,15 @@ fn handle_key(app: &mut App, key: event::KeyEvent) {
                 // Would need double-tap for gg, but single g goes to top for now.
                 app.conversation_scroll = u16::MAX;
             }
+            _ => {}
+        },
+        Focus::Memory => match key.code {
+            KeyCode::Char('j') | KeyCode::Down => app.select_memory_next(),
+            KeyCode::Char('k') | KeyCode::Up => app.select_memory_prev(),
+            KeyCode::Char('J') => app.memory_scroll = app.memory_scroll.saturating_add(1),
+            KeyCode::Char('K') => app.memory_scroll = app.memory_scroll.saturating_sub(1),
+            KeyCode::Char('G') => app.memory_scroll = 0,
+            KeyCode::Char('g') => app.memory_scroll = u16::MAX,
             _ => {}
         },
     }
@@ -366,11 +417,13 @@ mod tests {
     }
 
     #[test]
-    fn tab_toggles_focus() {
+    fn tab_cycles_focus() {
         let mut app = App::new();
         assert_eq!(app.focus, Focus::Sessions);
         handle_key(&mut app, key(KeyCode::Tab));
         assert_eq!(app.focus, Focus::Conversation);
+        handle_key(&mut app, key(KeyCode::Tab));
+        assert_eq!(app.focus, Focus::Memory);
         handle_key(&mut app, key(KeyCode::Tab));
         assert_eq!(app.focus, Focus::Sessions);
     }

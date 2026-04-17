@@ -5,6 +5,7 @@
 pub enum Focus {
     Sessions,
     Conversation,
+    Memory,
 }
 
 /// Per-session conversation buffer.
@@ -37,6 +38,14 @@ pub struct SessionRow {
     pub last_active_at: u32,
 }
 
+/// A memory file entry from the daemon.
+#[derive(Debug, Clone)]
+pub struct MemoryEntry {
+    pub name: String,
+    pub size: u64,
+    pub mtime: i64,
+}
+
 /// Top-level application state.
 pub struct App {
     pub running: bool,
@@ -56,6 +65,12 @@ pub struct App {
     /// Scroll offset from the bottom of the conversation view.
     pub conversation_scroll: u16,
 
+    // Memory panel state.
+    pub memory_files: Vec<MemoryEntry>,
+    pub selected_memory: usize,
+    pub memory_content: String,
+    pub memory_scroll: u16,
+
     /// Errors or status messages shown briefly.
     pub flash_message: Option<String>,
 }
@@ -72,6 +87,10 @@ impl App {
             daemon_status: DaemonStatus::default(),
             conversations: Vec::new(),
             conversation_scroll: 0,
+            memory_files: Vec::new(),
+            selected_memory: 0,
+            memory_content: String::new(),
+            memory_scroll: 0,
             flash_message: None,
         }
     }
@@ -139,12 +158,49 @@ impl App {
         self.conversation_scroll = 0;
     }
 
-    /// Toggle focus between panels.
+    /// Cycle focus through panels.
     pub fn toggle_focus(&mut self) {
         self.focus = match self.focus {
             Focus::Sessions => Focus::Conversation,
-            Focus::Conversation => Focus::Sessions,
+            Focus::Conversation => Focus::Memory,
+            Focus::Memory => Focus::Sessions,
         };
+    }
+
+    /// Move memory file selection up.
+    pub fn select_memory_prev(&mut self) {
+        if self.selected_memory > 0 {
+            self.selected_memory -= 1;
+            self.memory_scroll = 0;
+        }
+    }
+
+    /// Move memory file selection down.
+    pub fn select_memory_next(&mut self) {
+        if !self.memory_files.is_empty() && self.selected_memory < self.memory_files.len() - 1 {
+            self.selected_memory += 1;
+            self.memory_scroll = 0;
+        }
+    }
+
+    /// Update memory file list. Preserves selection if possible.
+    pub fn update_memory_files(&mut self, files: Vec<MemoryEntry>) {
+        let prev_name = self.memory_files.get(self.selected_memory).map(|e| e.name.clone());
+        self.memory_files = files;
+        if let Some(ref name) = prev_name {
+            if let Some(idx) = self.memory_files.iter().position(|e| e.name == *name) {
+                self.selected_memory = idx;
+            } else {
+                self.selected_memory = self.selected_memory.min(
+                    self.memory_files.len().saturating_sub(1),
+                );
+            }
+        }
+    }
+
+    /// The currently selected memory file name, if any.
+    pub fn selected_memory_name(&self) -> Option<&str> {
+        self.memory_files.get(self.selected_memory).map(|e| e.name.as_str())
     }
 
     /// Update sessions list from daemon. Preserves selection if possible.
@@ -276,11 +332,13 @@ mod tests {
     }
 
     #[test]
-    fn toggle_focus() {
+    fn toggle_focus_cycles() {
         let mut app = App::new();
         assert_eq!(app.focus, Focus::Sessions);
         app.toggle_focus();
         assert_eq!(app.focus, Focus::Conversation);
+        app.toggle_focus();
+        assert_eq!(app.focus, Focus::Memory);
         app.toggle_focus();
         assert_eq!(app.focus, Focus::Sessions);
     }

@@ -39,6 +39,11 @@ enum Command {
         #[command(subcommand)]
         action: SessionAction,
     },
+    /// Browse agent memory (read-only view of Claude Code's project memory)
+    Memory {
+        #[command(subcommand)]
+        action: MemoryAction,
+    },
     /// List active conversation surfaces
     Surfaces,
     /// Tail the daemon's systemd journal
@@ -77,6 +82,19 @@ enum SessionAction {
     },
 }
 
+#[derive(Subcommand)]
+enum MemoryAction {
+    /// List memory files
+    List,
+    /// Print the MEMORY.md index
+    Index,
+    /// Print a specific memory file
+    Show {
+        /// Filename (e.g. "user_role.md")
+        name: String,
+    },
+}
+
 const SURFACE: &str = "cli";
 
 #[tokio::main]
@@ -96,6 +114,11 @@ async fn main() {
                 surface,
                 conversation_id,
             } => cmd_sessions_delete(&surface, &conversation_id).await,
+        },
+        Some(Command::Memory { action }) => match action {
+            MemoryAction::List => cmd_memory_list().await,
+            MemoryAction::Index => cmd_memory_index().await,
+            MemoryAction::Show { name } => cmd_memory_show(&name).await,
         },
         Some(Command::Surfaces) => cmd_surfaces().await,
         Some(Command::Logs { follow, surface }) => cmd_logs(follow, surface.as_deref()),
@@ -439,6 +462,81 @@ async fn cmd_sessions_delete(surface: &str, conversation_id: &str) -> i32 {
             eprintln!("companion: delete failed: {e}");
             1
         }
+    }
+}
+
+async fn cmd_memory_list() -> i32 {
+    let proxy = connect_or_die().await;
+
+    match proxy.list_memory_files().await {
+        Ok(files) => {
+            if files.is_empty() {
+                println!("No memory files yet.");
+                return 0;
+            }
+
+            let w_name = files.iter().map(|(n, _, _)| n.len()).max().unwrap_or(0).max(4);
+            println!("{:<w_name$}  {:>6}  {}", "NAME", "SIZE", "MODIFIED");
+            for (name, size, mtime) in files {
+                println!(
+                    "{:<w_name$}  {:>6}  {}",
+                    name,
+                    format_size(size),
+                    format_timestamp(mtime as u32),
+                );
+            }
+            0
+        }
+        Err(e) => {
+            eprintln!("companion: {e}");
+            1
+        }
+    }
+}
+
+async fn cmd_memory_index() -> i32 {
+    let proxy = connect_or_die().await;
+
+    match proxy.get_memory_index().await {
+        Ok(content) => {
+            if content.is_empty() {
+                println!("No MEMORY.md index yet.");
+            } else {
+                print!("{content}");
+            }
+            0
+        }
+        Err(e) => {
+            eprintln!("companion: {e}");
+            1
+        }
+    }
+}
+
+async fn cmd_memory_show(name: &str) -> i32 {
+    let proxy = connect_or_die().await;
+
+    match proxy.read_memory_file(name).await {
+        Ok(content) => {
+            print!("{content}");
+            0
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            let msg = msg
+                .strip_prefix("org.freedesktop.DBus.Error.FileNotFound: ")
+                .unwrap_or(&msg);
+            eprintln!("companion: {msg}");
+            1
+        }
+    }
+}
+
+fn format_size(bytes: u64) -> String {
+    if bytes < 1024 {
+        format!("{bytes}B")
+    } else {
+        format!("{}K", bytes / 1024)
     }
 }
 

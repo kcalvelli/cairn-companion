@@ -2,6 +2,7 @@
 //! manages session mapping, and streams responses back.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use tokio::io::AsyncBufReadExt;
@@ -369,6 +370,10 @@ pub struct Dispatcher {
     /// `--permission-mode bypassPermissions` instead and don't read
     /// this field.
     anonymous_settings_json: Arc<str>,
+    /// Workspace directory. Used as `current_dir` for spawned companion
+    /// processes so Claude Code's project memory lands in a stable,
+    /// known slug path regardless of which surface triggered the turn.
+    workspace_dir: PathBuf,
 }
 
 impl Dispatcher {
@@ -377,7 +382,7 @@ impl Dispatcher {
     /// `build_anonymous_settings_json` at startup) and handing it in.
     /// Failure to build the deny list is a fatal startup error per
     /// the dispatcher's fallback policy — see main.rs.
-    pub fn new(store: SessionStore, anonymous_settings_json: String) -> Self {
+    pub fn new(store: SessionStore, anonymous_settings_json: String, workspace_dir: PathBuf) -> Self {
         let (broadcast_tx, _) = broadcast::channel(256);
         Self {
             store: Arc::new(Mutex::new(store)),
@@ -386,12 +391,19 @@ impl Dispatcher {
             subprocess_env: HashMap::new(),
             broadcast_tx,
             anonymous_settings_json: Arc::from(anonymous_settings_json.as_str()),
+            workspace_dir,
         }
     }
 
     /// Subscribe to the broadcast channel for all turn events.
     pub fn subscribe(&self) -> broadcast::Receiver<BroadcastEvent> {
         self.broadcast_tx.subscribe()
+    }
+
+    /// The workspace directory. Used by the D-Bus interface to resolve
+    /// Claude Code's project memory path.
+    pub fn workspace_dir(&self) -> &PathBuf {
+        &self.workspace_dir
     }
 
     /// Get a lock on the session store (for D-Bus methods that query sessions directly).
@@ -409,6 +421,8 @@ impl Dispatcher {
         env: HashMap<String, String>,
     ) -> Self {
         let (broadcast_tx, _) = broadcast::channel(256);
+        let workspace_dir = std::env::temp_dir().join("cairn-companion-test-workspace");
+        let _ = std::fs::create_dir_all(&workspace_dir);
         Self {
             store: Arc::new(Mutex::new(store)),
             session_locks: Mutex::new(HashMap::new()),
@@ -416,6 +430,7 @@ impl Dispatcher {
             subprocess_env: env,
             broadcast_tx,
             anonymous_settings_json: Arc::from(TEST_ANONYMOUS_SETTINGS_JSON),
+            workspace_dir,
         }
     }
 
@@ -441,11 +456,12 @@ impl Dispatcher {
         let env = self.subprocess_env.clone();
         let broadcast_tx = self.broadcast_tx.clone();
         let anon_settings = self.anonymous_settings_json.clone();
+        let workspace = self.workspace_dir.clone();
 
         tokio::spawn(async move {
             // Serialize turns within a session.
             let _guard = lock.lock().await;
-            Self::run_turn(store, req, tx, broadcast_tx, &cmd, &env, &anon_settings).await;
+            Self::run_turn(store, req, tx, broadcast_tx, &cmd, &env, &anon_settings, &workspace).await;
         });
 
         rx
@@ -459,6 +475,7 @@ impl Dispatcher {
         companion_cmd: &str,
         extra_env: &HashMap<String, String>,
         anonymous_settings_json: &str,
+        workspace_dir: &PathBuf,
     ) {
         // Resolve (or create) the session.
         let (session_id, claude_session_id) = {
@@ -525,6 +542,7 @@ impl Dispatcher {
         // with `exec claude "${args[@]}" "$@"`. Everything we append
         // here lands in `"$@"` and reaches claude unchanged.
         let mut cmd = Command::new(companion_cmd);
+        cmd.current_dir(&workspace_dir);
         cmd.arg("--output-format")
             .arg("stream-json")
             .arg("--verbose")
