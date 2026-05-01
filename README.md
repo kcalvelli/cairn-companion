@@ -36,14 +36,13 @@ cairn-companion ships in opt-in tiers. You can stop at any tier and still have a
 |------|--------------|-----------|
 | **0 — Shell wrapper** | A `companion` command that runs Claude with your persona files and workspace pre-loaded | Nothing persistent. Just a binary. |
 | **1 — Single-machine daemon** | Persistent sessions, channel adapters (Telegram/Discord/email/XMPP), CLI with subcommands, TUI dashboard | A user-level systemd daemon |
-| **2 — Distributed agency** | The agent can act on whichever machine you're currently using via mcp-gateway + Tailscale; active-spoke routing follows your presence | Hub daemon on one machine + mcp-gateway with companion tool servers on every machine |
-| **(optional) GUI** | GTK4/libadwaita desktop app for visual dashboards and memory browsing | Opt-in GUI client |
+| **2 — Distributed agency** | The agent can act on whichever machine you're currently using via per-host spoke tools over Tailscale, with shared memory synced across the fleet | Per-host gateway + spoke tools, plus Syncthing-based memory sync |
 
 See [ROADMAP.md](./ROADMAP.md) for the full build order and which OpenSpec proposals ship each tier.
 
 ## Getting started
 
-> **Tier 0 is complete and most of Tier 1 is live.** The `companion` wrapper, the home-manager module, and the default character-free persona all work today. The Tier 1 daemon (`companion-core`) is running — systemd user service, D-Bus control plane, persistent session routing, streaming support, an OpenAI-compatible HTTP gateway for Home Assistant voice integration, a Rust CLI client, a ratatui TUI dashboard, and **three channel adapters: Telegram, XMPP, and email**. Remaining Tier 1 work: `channel-discord`, voice (STT+TTS), and a handful of deferred CLI subcommands. Layering your own character on top is covered in [Authoring a persona](#authoring-a-persona) below. See [ROADMAP.md](./ROADMAP.md) for what's next.
+> **Tier 0, Tier 1, and Tier 2 are all live.** The `companion` wrapper, the home-manager module, and the default character-free persona work today. The Tier 1 daemon (`companion-core`) ships a systemd user service, D-Bus control plane, persistent session routing, streaming support, an OpenAI-compatible HTTP gateway for Home Assistant voice integration, a Rust CLI client, a ratatui TUI dashboard, and **all four channel adapters: Telegram, XMPP, email, and Discord**. Tier 2 ships seven local MCP spoke tools (notify, screenshot, clipboard, journal, apps, niri, shell), HTTP-transport spokes that work across the fleet over Tailscale, and Syncthing-based memory sync that gives the companion a shared persistent memory across machines. A handful of CLI subcommands and TUI panels remain deferred by design. Layering your own character on top is covered in [Authoring a persona](#authoring-a-persona) below. See [ROADMAP.md](./ROADMAP.md) for current status.
 
 Adding cairn-companion to a NixOS + home-manager system looks like this:
 
@@ -82,7 +81,7 @@ companion -p "one-shot prompt"  # non-interactive, prints response, exits
 companion --resume              # continue the last session
 ```
 
-Everything after the wrapper's own injections is passthrough — any flag Claude Code accepts, `companion` accepts. See [the wrapper contract in the bootstrap spec](./openspec/changes/bootstrap/specs/wrapper/spec.md) for the full list of supported invocation shapes and guarantees.
+Everything after the wrapper's own injections is passthrough — any flag Claude Code accepts, `companion` accepts. See [the wrapper contract in the bootstrap spec](./openspec/changes/archive/bootstrap/specs/wrapper/spec.md) for the full list of supported invocation shapes and guarantees.
 
 ### First run
 
@@ -363,23 +362,25 @@ If you enable `services.cairn-companion` without setting `persona.userFile` or `
 cairn-companion/
 ├── flake.nix                   # Nix flake exposing the home-manager module
 ├── ROADMAP.md                  # Tiered build order with links to proposals
-├── openspec/
-│   ├── config.yaml             # Context, non-goals, and architectural rules
-│   └── changes/
-│       ├── archive/            # Completed proposals (bootstrap, daemon-core,
-│       │                       # openai-gateway, channel-xmpp, ...)
-│       ├── cli-client/         # Tier 1 CLI subcommands
-│       ├── tui-dashboard/      # Tier 1 terminal dashboard
-│       ├── channel-telegram/   # Tier 1 first channel adapter
-│       ├── channel-email/      # Tier 1 email adapter
-│       ├── channel-discord/    # Tier 1 Discord adapter
-│       ├── spoke-tools/        # Tier 2 machine-local MCP tool servers
-│       ├── distributed-routing/# Tier 2 hub/spoke multi-machine routing
-│       ├── gui-gtk4/           # Optional GUI
-│       └── cairn-integration/  # Thin consumer-side proposal (lives in cairn)
+├── packages/                   # Rust crates: companion-core, cli-client,
+│                               # tui-dashboard, spoke-tools, plus the
+│                               # Tier 0 shell wrapper and default persona
+├── modules/                    # home-manager and NixOS modules
+├── persona/default/            # Character-free default persona files
+└── openspec/
+    ├── config.yaml             # Context, non-goals, architectural rules
+    └── changes/
+        ├── archive/            # Shipped proposals (bootstrap, daemon-core,
+        │                       # openai-gateway, tui-dashboard, all four
+        │                       # channel adapters, spoke-tools, memory-tier,
+        │                       # spoke-http-transport)
+        ├── cli-client/         # Active — core shipped, subcommands deferred
+        ├── distributed-routing/# Superseded by spoke-http-transport; kept
+        │                       # for historical reference
+        └── cairn-integration/  # Thin consumer-side proposal (lives in cairn)
 ```
 
-Each change is a self-contained proposal with `proposal.md`, `specs/` describing behavior, and `tasks.md` with an implementation checklist. Shipped changes (`bootstrap`, `daemon-core`, `openai-gateway`, `cli-client`, `tui-dashboard`, `channel-telegram`, `channel-xmpp`, `channel-email`) are either fully drafted or archived. The remaining proposals are skeletons that get fleshed out when picked up.
+Each change is a self-contained proposal with `proposal.md`, `specs/` describing behavior, and `tasks.md` with an implementation checklist. Anything in `archive/` is shipped. `cli-client` is the only Tier 1 proposal still active — its core subcommands shipped on 2026-04-07 and a handful of follow-on subcommands stay deferred by design.
 
 ## Development workflow
 
@@ -395,8 +396,8 @@ To work on this project:
 
 ```bash
 nix develop                     # enter devshell with nixfmt, git, gh
-cat ROADMAP.md                  # see what's next
-cd openspec/changes/bootstrap   # start with the bootstrap proposal
+cat ROADMAP.md                  # see current status and what's open
+ls openspec/changes/            # active proposals; archive/ holds shipped ones
 ```
 
 ## Related projects
