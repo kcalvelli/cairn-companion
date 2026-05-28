@@ -226,6 +226,42 @@ services.cairn-companion = {
 };
 ```
 
+#### Per-channel model overrides
+
+By default every turn runs on whatever model `claude-code` itself resolves — typically Opus, or whatever your `~/.claude/settings.json` selects. For surfaces where Opus is overkill (email classification, link previews, anything short and high-volume), set a cheaper backend per channel:
+
+```nix
+services.cairn-companion = {
+  # Daemon-wide fallback for any surface without its own override.
+  # D-Bus / CLI turns from your terminal also use this — there is no
+  # separate knob for them.
+  daemon.defaultModel = null;  # null = let claude-code's default win
+
+  # Per-channel overrides — each takes precedence over daemon.defaultModel.
+  channels.email.model    = "claude-haiku-4-5-20251001";
+  channels.discord.model  = null;  # stays on default
+  channels.telegram.model = null;
+  channels.xmpp.model     = null;
+
+  # The OpenAI gateway has TWO model fields:
+  #   modelName      — cosmetic, what `/v1/models` echoes to clients
+  #   backendModel   — what the companion subprocess actually runs on
+  # Distinct on purpose: clients pinning a retired Anthropic model ID
+  # used to break the voice pipeline, so the gateway ignores the client's
+  # `model` field and uses backendModel exclusively.
+  gateway.openai.backendModel = null;
+};
+```
+
+Resolution order, per turn:
+
+1. An explicit `model` field on the `TurnRequest` (no channel uses this today; reserved for future per-call overrides).
+2. The per-surface override above (`channels.<name>.model` or `gateway.openai.backendModel`).
+3. `daemon.defaultModel`.
+4. `null` everywhere → no `--model` flag passed → claude-code's own default wins.
+
+IDs go straight to `claude --model <id>` with no validation on this side — bogus IDs surface as a clean dispatcher error from claude itself, which is faster to debug than a re-implemented catalog that drifts every release.
+
 **Shared design rules across all channel adapters:**
 
 - **Empty allowlist = deny everyone (or Anonymous trust).** There is no implicit-trust mode. Telegram and Discord use numeric user IDs; XMPP uses bare JIDs; email uses addresses. If you forget the allowlist, the bot connects but everyone gets Anonymous trust at best.

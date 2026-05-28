@@ -10,6 +10,7 @@ use tokio::process::Command;
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tracing::{debug, error, info, warn};
 
+use crate::model_config::ModelConfig;
 use crate::store::SessionStore;
 
 // ---------------------------------------------------------------------------
@@ -53,10 +54,11 @@ pub struct TurnRequest {
     /// channel adapters MUST decide explicitly.
     pub trust: TrustLevel,
     /// Optional model override passed as `--model <value>` to the companion
-    /// subprocess. When `None`, the CLI's default model is used (typically
-    /// Opus). Callers like the OpenAI gateway forward the request's `model`
-    /// field here so external clients (cairn-mail, etc.) can request a
-    /// cheaper tier for classification and other low-stakes work.
+    /// subprocess. When `None`, the dispatcher consults its `ModelConfig`
+    /// for a per-surface or daemon-wide default; if none is configured
+    /// either, no `--model` flag is passed and Claude Code's own default
+    /// (typically Opus) wins. An explicit `Some(x)` from the caller always
+    /// takes precedence over the configured defaults.
     pub model: Option<String>,
 }
 
@@ -374,6 +376,11 @@ pub struct Dispatcher {
     /// processes so Claude Code's project memory lands in a stable,
     /// known slug path regardless of which surface triggered the turn.
     workspace_dir: PathBuf,
+    /// Per-surface model overrides. Consulted when `req.model` is None.
+    /// Built once at daemon startup from `COMPANION_MODEL_*` env vars and
+    /// held by value — env changes after startup have no effect until
+    /// systemd restarts the unit.
+    model_config: Arc<ModelConfig>,
 }
 
 impl Dispatcher {
@@ -382,7 +389,12 @@ impl Dispatcher {
     /// `build_anonymous_settings_json` at startup) and handing it in.
     /// Failure to build the deny list is a fatal startup error per
     /// the dispatcher's fallback policy — see main.rs.
-    pub fn new(store: SessionStore, anonymous_settings_json: String, workspace_dir: PathBuf) -> Self {
+    pub fn new(
+        store: SessionStore,
+        anonymous_settings_json: String,
+        workspace_dir: PathBuf,
+        model_config: ModelConfig,
+    ) -> Self {
         let (broadcast_tx, _) = broadcast::channel(256);
         Self {
             store: Arc::new(Mutex::new(store)),
@@ -392,6 +404,7 @@ impl Dispatcher {
             broadcast_tx,
             anonymous_settings_json: Arc::from(anonymous_settings_json.as_str()),
             workspace_dir,
+            model_config: Arc::new(model_config),
         }
     }
 
@@ -420,6 +433,18 @@ impl Dispatcher {
         cmd: impl Into<String>,
         env: HashMap<String, String>,
     ) -> Self {
+        Self::with_command_and_models(store, cmd, env, ModelConfig::default())
+    }
+
+    /// Test constructor that also takes a `ModelConfig`. Used by the
+    /// argv tests that exercise per-surface override resolution.
+    #[cfg(test)]
+    pub fn with_command_and_models(
+        store: SessionStore,
+        cmd: impl Into<String>,
+        env: HashMap<String, String>,
+        model_config: ModelConfig,
+    ) -> Self {
         let (broadcast_tx, _) = broadcast::channel(256);
         let workspace_dir = std::env::temp_dir().join("cairn-companion-test-workspace");
         let _ = std::fs::create_dir_all(&workspace_dir);
@@ -431,6 +456,7 @@ impl Dispatcher {
             broadcast_tx,
             anonymous_settings_json: Arc::from(TEST_ANONYMOUS_SETTINGS_JSON),
             workspace_dir,
+            model_config: Arc::new(model_config),
         }
     }
 
@@ -457,11 +483,12 @@ impl Dispatcher {
         let broadcast_tx = self.broadcast_tx.clone();
         let anon_settings = self.anonymous_settings_json.clone();
         let workspace = self.workspace_dir.clone();
+        let model_config = self.model_config.clone();
 
         tokio::spawn(async move {
             // Serialize turns within a session.
             let _guard = lock.lock().await;
-            Self::run_turn(store, req, tx, broadcast_tx, &cmd, &env, &anon_settings, &workspace).await;
+            Self::run_turn(store, req, tx, broadcast_tx, &cmd, &env, &anon_settings, &workspace, &model_config).await;
         });
 
         rx
@@ -476,6 +503,7 @@ impl Dispatcher {
         extra_env: &HashMap<String, String>,
         anonymous_settings_json: &str,
         workspace_dir: &PathBuf,
+        model_config: &ModelConfig,
     ) {
         // Resolve (or create) the session.
         let (session_id, claude_session_id) = {
@@ -581,7 +609,15 @@ impl Dispatcher {
             }
         }
 
-        if let Some(ref model) = req.model {
+        // Resolve the model: explicit caller override > per-surface
+        // configured default > daemon-wide default > None. `None` means
+        // omit `--model` entirely so Claude Code's own default wins.
+        let resolved_model = req
+            .model
+            .clone()
+            .or_else(|| model_config.for_surface(&req.surface_id));
+
+        if let Some(ref model) = resolved_model {
             cmd.arg("--model").arg(model);
         }
 
@@ -601,7 +637,7 @@ impl Dispatcher {
         info!(
             surface = %req.surface_id,
             conversation = %req.conversation_id,
-            model = ?req.model,
+            model = ?resolved_model,
             resume = ?claude_session_id,
             "spawning companion"
         );
@@ -1151,5 +1187,140 @@ mod tests {
             _ => None,
         });
         assert_eq!(complete, Some("Hello streaming world"));
+    }
+
+    // -----------------------------------------------------------------
+    // Model resolution — argv-mode tests
+    // -----------------------------------------------------------------
+
+    /// Run one turn through a dispatcher built with the given ModelConfig,
+    /// returning the argv the companion subprocess actually received.
+    /// Parameterized version of capture_dispatch_argv that lets the test
+    /// inject a surface_id, an explicit req.model override, and the
+    /// daemon's ModelConfig snapshot.
+    async fn capture_argv_with_model_config(
+        surface: &str,
+        explicit_model: Option<&str>,
+        model_config: ModelConfig,
+    ) -> Vec<String> {
+        let argv_path = std::env::temp_dir().join(format!(
+            "companion-argv-test-{}.txt",
+            uuid::Uuid::new_v4()
+        ));
+        let mut env = HashMap::new();
+        env.insert("MOCK_MODE".into(), "argv".into());
+        env.insert("MOCK_SESSION_ID".into(), "argv-test-session".into());
+        env.insert(
+            "MOCK_ARGV_FILE".into(),
+            argv_path.to_string_lossy().into_owned(),
+        );
+        let store = SessionStore::open_in_memory().unwrap();
+        let dispatcher = Dispatcher::with_command_and_models(
+            store,
+            mock_script(),
+            env,
+            model_config,
+        );
+        let req = TurnRequest {
+            surface_id: surface.into(),
+            conversation_id: format!("argv-conv-{surface}"),
+            message_text: "hi".into(),
+            trust: TrustLevel::Owner,
+            model: explicit_model.map(String::from),
+        };
+        let rx = dispatcher.dispatch(req).await;
+        let _ = collect_events(rx).await;
+        let captured = std::fs::read_to_string(&argv_path)
+            .expect("argv file should exist after argv-mode mock ran");
+        let _ = std::fs::remove_file(&argv_path);
+        captured.lines().map(|s| s.to_string()).collect()
+    }
+
+    /// Pull the value of `--model` out of argv, or `None` if the flag
+    /// isn't present.
+    fn model_arg(argv: &[String]) -> Option<&str> {
+        let idx = argv.iter().position(|a| a == "--model")?;
+        argv.get(idx + 1).map(String::as_str)
+    }
+
+    #[tokio::test]
+    async fn no_model_config_omits_model_flag() {
+        if !mock_available() { return; }
+        let argv = capture_argv_with_model_config(
+            "email",
+            None,
+            ModelConfig::default(),
+        ).await;
+        assert_eq!(
+            model_arg(&argv),
+            None,
+            "with no override and no req.model, dispatcher must omit --model so claude-code's default wins"
+        );
+    }
+
+    #[tokio::test]
+    async fn per_surface_model_lands_in_argv() {
+        if !mock_available() { return; }
+        let cfg = ModelConfig {
+            email: Some("claude-haiku-4-5-20251001".into()),
+            ..Default::default()
+        };
+        let argv = capture_argv_with_model_config("email", None, cfg).await;
+        assert_eq!(
+            model_arg(&argv),
+            Some("claude-haiku-4-5-20251001"),
+            "configured per-surface override must reach --model"
+        );
+    }
+
+    #[tokio::test]
+    async fn daemon_default_applies_to_unknown_surface() {
+        if !mock_available() { return; }
+        let cfg = ModelConfig {
+            default: Some("daemon-default-model".into()),
+            ..Default::default()
+        };
+        // "dbus" has no Nix-exposed override; should fall through to default.
+        let argv = capture_argv_with_model_config("dbus", None, cfg).await;
+        assert_eq!(model_arg(&argv), Some("daemon-default-model"));
+    }
+
+    #[tokio::test]
+    async fn explicit_req_model_wins_over_config() {
+        if !mock_available() { return; }
+        let cfg = ModelConfig {
+            default: Some("daemon-default-model".into()),
+            email: Some("config-email-model".into()),
+            ..Default::default()
+        };
+        let argv = capture_argv_with_model_config(
+            "email",
+            Some("caller-override-model"),
+            cfg,
+        ).await;
+        assert_eq!(
+            model_arg(&argv),
+            Some("caller-override-model"),
+            "an explicit req.model must take precedence over both per-surface and daemon-default config"
+        );
+    }
+
+    #[tokio::test]
+    async fn per_surface_wins_over_default_in_argv() {
+        if !mock_available() { return; }
+        let cfg = ModelConfig {
+            default: Some("opus-default".into()),
+            email: Some("email-haiku".into()),
+            ..Default::default()
+        };
+        let argv_email = capture_argv_with_model_config("email", None, cfg.clone()).await;
+        assert_eq!(model_arg(&argv_email), Some("email-haiku"));
+
+        let argv_other = capture_argv_with_model_config("discord", None, cfg).await;
+        assert_eq!(
+            model_arg(&argv_other),
+            Some("opus-default"),
+            "discord (no override) should fall back to the daemon default"
+        );
     }
 }

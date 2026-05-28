@@ -219,6 +219,28 @@ in
               inputs.mcp-gateway.packages.''${pkgs.system}.default;
         '';
       };
+
+      defaultModel = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        example = "claude-haiku-4-5-20251001";
+        description = ''
+          Daemon-wide fallback Claude model id passed as `--model <id>` to
+          the companion subprocess when no per-channel override is set.
+          Passed verbatim to claude-code; this module does not validate
+          against Anthropic's catalog (claude-code itself fails fast on a
+          bogus id).
+
+          `null` (the default) means no `--model` flag is passed and
+          claude-code's own resolved default (typically Opus, or whatever
+          `~/.claude/settings.json` selects) wins. This is the
+          zero-behavior-change setting.
+
+          Per-channel options under `channels.<name>.model` and
+          `gateway.openai.backendModel` take precedence over this default.
+          D-Bus/CLI turns use this default — they have no separate knob.
+        '';
+      };
     };
 
     cli = {
@@ -486,6 +508,18 @@ in
           `multi_message`: collect full response, split at 4096-char boundaries.
         '';
       };
+
+      model = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        example = "claude-haiku-4-5-20251001";
+        description = ''
+          Claude model id used for Telegram turns. Overrides
+          `daemon.defaultModel`. `null` means fall back to the daemon
+          default (or, if that is also null, claude-code's own default).
+          Passed verbatim to `claude --model`.
+        '';
+      };
     };
 
     channels.xmpp = {
@@ -597,6 +631,18 @@ in
           streaming code lands.
         '';
       };
+
+      model = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        example = "claude-haiku-4-5-20251001";
+        description = ''
+          Claude model id used for XMPP turns (DM and MUC). Overrides
+          `daemon.defaultModel`. `null` means fall back to the daemon
+          default (or, if that is also null, claude-code's own default).
+          Passed verbatim to `claude --model`.
+        '';
+      };
     };
 
     channels.discord = {
@@ -645,6 +691,18 @@ in
           arrive (the message appears to type itself).
           `multi_message`: collect full response, split at 2000-char
           boundaries, send each chunk as a separate message.
+        '';
+      };
+
+      model = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        example = "claude-haiku-4-5-20251001";
+        description = ''
+          Claude model id used for Discord turns. Overrides
+          `daemon.defaultModel`. `null` means fall back to the daemon
+          default (or, if that is also null, claude-code's own default).
+          Passed verbatim to `claude --model`.
         '';
       };
     };
@@ -743,6 +801,22 @@ in
         '';
         example = [ "alice@example.com" "bob@example.org" ];
       };
+
+      model = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        example = "claude-haiku-4-5-20251001";
+        description = ''
+          Claude model id used for email turns. Overrides
+          `daemon.defaultModel`. `null` means fall back to the daemon
+          default (or, if that is also null, claude-code's own default).
+          Passed verbatim to `claude --model`.
+
+          Email classification and reply drafting are exactly the kind of
+          short, high-volume turns that benefit from Haiku — set this
+          before reaching for the daemon-wide default.
+        '';
+      };
     };
 
     gateway.openai = {
@@ -773,6 +847,29 @@ in
           Model name returned by `/v1/models` and echoed in completion
           responses. Cosmetic — the companion always routes through the
           same claude backend regardless of what this says.
+        '';
+      };
+
+      backendModel = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        example = "claude-haiku-4-5-20251001";
+        description = ''
+          Claude model id ACTUALLY used for gateway-originated turns
+          (OpenAI surface_id `"openai"`). Distinct from `modelName`, which
+          is purely cosmetic — `modelName` is what `/v1/models` and the
+          completion `model` field echo back to clients; `backendModel` is
+          what the companion subprocess receives as `--model`.
+
+          Overrides `daemon.defaultModel`. `null` means fall back to the
+          daemon default (or, if that is also null, claude-code's own
+          default). Passed verbatim to `claude --model`.
+
+          The gateway deliberately ignores the OpenAI client's `model`
+          field on the request — letting external clients pin retired
+          Anthropic model ids broke the voice pipeline historically (see
+          gateway/mod.rs comment near the request handler). Operator
+          configures here, clients do not.
         '';
       };
 
@@ -917,7 +1014,24 @@ in
             "COMPANION_EMAIL_SMTP_PORT=${toString cfg.channels.email.smtpPort}"
             "COMPANION_EMAIL_POLL_INTERVAL_SECS=${toString cfg.channels.email.pollIntervalSecs}"
             "COMPANION_EMAIL_ALLOWED_SENDERS=${lib.concatStringsSep "," cfg.channels.email.allowedSenders}"
-          ];
+          ]
+          # Per-surface model overrides. Each var is only emitted when the
+          # corresponding option is set, so the daemon's ModelConfig::from_env
+          # sees `None` and the dispatcher omits `--model` entirely. Independent
+          # of channel.enable on purpose — setting an override for a currently
+          # disabled channel is harmless and survives the next enable.
+          ++ lib.optional (cfg.daemon.defaultModel != null)
+            "COMPANION_MODEL_DEFAULT=${cfg.daemon.defaultModel}"
+          ++ lib.optional (cfg.gateway.openai.backendModel != null)
+            "COMPANION_MODEL_OPENAI=${cfg.gateway.openai.backendModel}"
+          ++ lib.optional (cfg.channels.discord.model != null)
+            "COMPANION_MODEL_DISCORD=${cfg.channels.discord.model}"
+          ++ lib.optional (cfg.channels.email.model != null)
+            "COMPANION_MODEL_EMAIL=${cfg.channels.email.model}"
+          ++ lib.optional (cfg.channels.telegram.model != null)
+            "COMPANION_MODEL_TELEGRAM=${cfg.channels.telegram.model}"
+          ++ lib.optional (cfg.channels.xmpp.model != null)
+            "COMPANION_MODEL_XMPP=${cfg.channels.xmpp.model}";
         };
 
         Install = {

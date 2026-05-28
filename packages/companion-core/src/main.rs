@@ -2,6 +2,7 @@ mod channels;
 mod dbus;
 mod dispatcher;
 mod gateway;
+mod model_config;
 mod store;
 
 use std::sync::Arc;
@@ -83,8 +84,26 @@ async fn main() {
         }
     };
 
-    // 4. Initialize the dispatcher.
-    let dispatcher = Arc::new(dispatcher::Dispatcher::new(store, anonymous_settings, workspace_dir));
+    // 4. Read per-surface model overrides from env, then initialize the
+    //    dispatcher. ModelConfig is a snapshot — env changes after this
+    //    point don't take effect until the daemon restarts, same as every
+    //    other COMPANION_* env var on the unit.
+    let model_config = model_config::ModelConfig::from_env();
+    info!(
+        default_model = ?model_config.default,
+        openai = ?model_config.openai,
+        discord = ?model_config.discord,
+        email = ?model_config.email,
+        telegram = ?model_config.telegram,
+        xmpp = ?model_config.xmpp,
+        "model overrides loaded"
+    );
+    let dispatcher = Arc::new(dispatcher::Dispatcher::new(
+        store,
+        anonymous_settings,
+        workspace_dir,
+        model_config,
+    ));
     info!("dispatcher ready");
 
     // 5. Acquire the D-Bus well-known name on the session bus.
