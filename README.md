@@ -140,14 +140,19 @@ The daemon-independent checks (spokes, workspace, persona) run even when the dae
 ✓ OK    channels   2 enabled
     ✓ OK    telegram   connected
     ! WARN  email      reconnecting — connection refused
-✗ FAIL  spokes     1/8 spoke(s) unreachable
+! WARN  spokes     5/14 spoke(s) unreachable
     ✓ OK    companion-shell        http://localhost:18790/mcp (2ms)
-    ✗ FAIL  mini-companion-notify  http://mini…:18792/mcp: connection refused
+    ! WARN  mini-companion-notify  connection refused (session-scoped — host may be headless)
+    ✗ FAIL  mini-companion-shell   connection refused
 ✓ OK    workspace  /home/keith/.local/share/cairn-companion/workspace
 ✓ OK    persona    6 persona file(s) resolve
 ```
 
-Status semantics: `OK` is healthy, `WARN` is degraded-but-recovering (a channel in backoff-retry), `FAIL` is a hard problem, `SKIP` is not-applicable (gateway disabled, daemon down). Only `FAIL` affects the exit code. `doctor` only ever reports — it never restarts, deletes, or repairs anything.
+Status semantics: `OK` is healthy, `WARN` is degraded-but-expected, `FAIL` is a hard problem, `SKIP` is not-applicable (gateway disabled, daemon down). Only `FAIL` affects the exit code.
+
+Spokes get one extra wrinkle: the tools that need a graphical session (`notify`, `screenshot`, `clipboard`, `apps`, `niri` — the ones started `After=graphical-session.target`) report `WARN`, not `FAIL`, when unreachable, because a normally-headless fleet host is *expected* to have them down. The session-independent spokes (`journal`, `shell`) still `FAIL` when down — those have no excuse. This keeps a non-zero exit meaning "something is actually wrong" instead of "a headless box is being headless."
+
+`doctor` only ever reports — it never restarts, deletes, or repairs anything.
 
 ### OpenAI gateway
 

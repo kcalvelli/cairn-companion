@@ -73,17 +73,28 @@
 - [x] 6.1 Add tests: exit-code contract (FAIL→nonzero, WARN/SKIP→zero),
   JSON output validity and parity with human mode, graceful degradation
   with daemon down.
-- [~] 6.2 Manual end-to-end on `edge`: healthy all-green run; daemon
-  stopped (headline FAIL, spokes still probed); a dead fleet peer in
-  `spoke-servers.json` (that spoke FAIL, others OK); a deliberately missing
-  persona file (persona check FAIL).
-  _Done live against the running daemon: daemon/sessions/workspace/persona
-  OK, real dead mini fleet-peer spokes correctly FAIL, exit code 1 (0 when
-  only WARN/SKIP), JSON parity. Graceful degradation proven incidentally —
-  the running daemon predates `GetHealth`, so channels/gateway SKIP with
-  "daemon did not report health". Still to exercise (need the new daemon
-  deployed via `nixos-rebuild`, and must not bounce the family's live
-  daemon mid-session): connected-channel → OK / reconnecting → WARN path,
-  full daemon-stopped headline FAIL, deliberate missing-persona FAIL._
+- [x] 6.2 Manual end-to-end across the fleet (post-`nixos-rebuild`):
+  edge healthy all-green; gateway `/health` OK; `GetHealth` live (channels
+  resolve instead of SKIP); daemon stopped → headline FAIL with
+  sessions/channels/gateway SKIP and spokes/workspace/persona still probed;
+  mini → all four channels `connected` OK (the connected-channel path);
+  session-scoped mini spokes WARN not FAIL; journal/shell FAIL-eligible;
+  exit 0 when only WARN/SKIP, 1 on real FAIL; JSON parity. Not exercised
+  (low-stakes, left for opportunistic capture): a channel mid-backoff →
+  WARN, and a deliberately missing persona file → FAIL (logic unit-tested).
+
+## 7. Session-scoped spoke classification (amendment)
+
+_Added after live testing: a normally-headless host (mini) has its
+graphical spokes down as its steady state, which made `doctor` exit 1
+permanently and gutted the exit-code contract. Session-scoped spokes now
+WARN instead of FAIL when unreachable._
+
+- [x] 7.1 Spec: amend the spoke-reachability requirement with session-
+  scoped (WARN) vs session-independent (FAIL) semantics + scenarios.
+- [x] 7.2 `doctor.rs`: classify by tool suffix (after final `companion-`)
+  against the module's `After=graphical-session.target` set
+  (notify/screenshot/clipboard/apps/niri); unreachable session-scoped →
+  WARN, journal/shell → FAIL. Unit-tested; verified live on edge + mini.
 - [x] 6.3 Add a short `companion doctor` section to the README/docs and
   update ROADMAP/IMPROVEMENTS status for this change.

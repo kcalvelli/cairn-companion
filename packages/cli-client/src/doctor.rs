@@ -26,6 +26,23 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 /// `(name, state, last_error)`.
 type HealthReply = (Vec<(String, String, String)>, bool, String, u32);
 
+/// Spoke tools the home-manager module starts `After=graphical-session.target`
+/// (see modules/home-manager/default.nix). They only run while a graphical
+/// session is active, so on a normally-headless host they are expected down
+/// — an unreachable session-scoped spoke is WARN, not FAIL. The
+/// session-independent tools (journal, shell) have no such excuse and FAIL
+/// when down. Keep in sync with the module's `After=graphical-session.target`
+/// set.
+const SESSION_SCOPED_TOOLS: &[&str] = &["notify", "screenshot", "clipboard", "apps", "niri"];
+
+/// Extract a spoke's tool suffix — the segment after the final `companion-`.
+/// `companion-niri` → `niri`; `mini-companion-notify` → `notify`;
+/// `edge-companion-shell` → `shell`. Applies uniformly to local and peer
+/// spokes.
+fn spoke_tool(name: &str) -> &str {
+    name.rsplit("companion-").next().unwrap_or(name)
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize)]
 #[serde(rename_all = "lowercase")]
 enum Status {
@@ -350,17 +367,31 @@ async fn check_spokes() -> Check {
                     .field("url", url)
                     .field("latency_ms", ms)
             }
-            Err(e) => Check::new(name, Status::Fail, format!("{url}: {e}")).field("url", url),
+            Err(e) => {
+                // A session-scoped tool (notify/screenshot/clipboard/apps/
+                // niri) being down is expected on a headless host — WARN,
+                // not FAIL, so a normally-headless peer doesn't make doctor
+                // exit nonzero as its steady state. journal/shell have no
+                // graphical dependency, so they still FAIL.
+                if SESSION_SCOPED_TOOLS.contains(&spoke_tool(&name)) {
+                    Check::new(name, Status::Warn, format!("{url}: {e} (session-scoped — host may be headless)"))
+                        .field("url", url)
+                } else {
+                    Check::new(name, Status::Fail, format!("{url}: {e}")).field("url", url)
+                }
+            }
         }
     });
     let mut children = futures_util::future::join_all(futures).await;
     children.sort_by(|a, b| a.id.cmp(&b.id));
 
     let failed = children.iter().filter(|c| c.status == Status::Fail).count();
-    let detail = if failed == 0 {
+    let warned = children.iter().filter(|c| c.status == Status::Warn).count();
+    let unreachable = failed + warned;
+    let detail = if unreachable == 0 {
         format!("{} spoke(s) reachable", children.len())
     } else {
-        format!("{}/{} spoke(s) unreachable", failed, children.len())
+        format!("{}/{} spoke(s) unreachable", unreachable, children.len())
     };
     let mut parent = Check::new("spokes", Status::Ok, detail);
     parent.children = children;
@@ -680,6 +711,32 @@ WORKSPACE=foo";
         assert_eq!(v["id"], "channels");
         assert_eq!(v["status"], "ok");
         assert_eq!(v["children"][0]["fields"]["state"], "connected");
+    }
+
+    #[test]
+    fn spoke_tool_extracts_suffix() {
+        assert_eq!(spoke_tool("companion-niri"), "niri");
+        assert_eq!(spoke_tool("mini-companion-notify"), "notify");
+        assert_eq!(spoke_tool("edge-companion-shell"), "shell");
+        assert_eq!(spoke_tool("companion-journal"), "journal");
+    }
+
+    #[test]
+    fn session_scoped_classification() {
+        // Graphical spokes are expected down on a headless host.
+        for t in ["notify", "screenshot", "clipboard", "apps", "niri"] {
+            assert!(
+                SESSION_SCOPED_TOOLS.contains(&t),
+                "{t} should be session-scoped"
+            );
+        }
+        // These must always be up — down is a real fault.
+        for t in ["journal", "shell"] {
+            assert!(
+                !SESSION_SCOPED_TOOLS.contains(&t),
+                "{t} must not be session-scoped"
+            );
+        }
     }
 
     #[test]

@@ -129,9 +129,21 @@ check SHALL be reported as `SKIP`, not `FAIL`.
 The `doctor` command SHALL read the spoke configuration
 (`spoke-servers.json`) and probe each declared spoke — local and fleet
 peer — with an MCP request to its `/mcp` endpoint. Each spoke SHALL be
-reported individually with its host and round-trip latency on success, or
-`FAIL` with the connection error on failure. When no spoke configuration
-exists, the entire spoke section SHALL be reported as `SKIP`.
+reported individually with its host and round-trip latency on success.
+When no spoke configuration exists, the entire spoke section SHALL be
+reported as `SKIP`.
+
+An unreachable spoke SHALL be classified by whether its tool requires a
+graphical session. Spokes whose tool is **session-scoped** (those the
+home-manager module starts `After=graphical-session.target`: `notify`,
+`screenshot`, `clipboard`, `apps`, `niri`) SHALL be reported as `WARN`
+when unreachable, because a host that is currently headless is expected
+to have them down — this is a normal steady state, not a fault. Spokes
+whose tool is **session-independent** (`journal`, `shell`) SHALL be
+reported as `FAIL` when unreachable, because those have no graphical
+dependency and being down indicates a real problem. The tool class is
+determined from the spoke's name suffix (the segment after the final
+`companion-`), so it applies uniformly to local and fleet-peer spokes.
 
 #### Scenario: A local spoke answers
 
@@ -139,12 +151,19 @@ exists, the entire spoke section SHALL be reported as `SKIP`.
   endpoint
 - **THEN** that spoke is reported `OK` with its host and latency
 
-#### Scenario: A fleet peer spoke is unreachable
+#### Scenario: A session-independent fleet peer spoke is unreachable
 
-- **WHEN** a fleet-peer spoke declared in `spoke-servers.json` does not
+- **WHEN** a fleet-peer spoke whose tool is `journal` or `shell` does not
   answer within the probe timeout
 - **THEN** that spoke is reported `FAIL` with the connection error
 - **AND** other spokes are still probed and reported independently
+
+#### Scenario: A session-scoped spoke is unreachable on a headless host
+
+- **WHEN** a spoke whose tool is `notify`, `screenshot`, `clipboard`,
+  `apps`, or `niri` does not answer within the probe timeout
+- **THEN** that spoke is reported `WARN`, not `FAIL`
+- **AND** the aggregate exit code is not failed by that spoke alone
 
 #### Scenario: No spoke configuration present
 
