@@ -50,6 +50,14 @@ pub trait Companion {
     /// Surfaces with at least one active session.
     async fn get_active_surfaces(&self) -> zbus::Result<Vec<String>>;
 
+    /// Channel + gateway health for `companion doctor`:
+    /// `(channels, gateway_enabled, gateway_bind, gateway_port)` where
+    /// `channels` is `[(name, state, last_error)]`.
+    #[allow(clippy::type_complexity)]
+    async fn get_health(
+        &self,
+    ) -> zbus::Result<(Vec<(String, String, String)>, bool, String, u32)>;
+
     /// Resolved path to Claude Code's project memory directory, or empty
     /// string if the directory doesn't exist yet.
     async fn get_memory_path(&self) -> zbus::Result<String>;

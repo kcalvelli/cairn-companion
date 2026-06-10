@@ -13,6 +13,7 @@ use tokio::sync::Notify;
 use tracing::{debug, error, info, warn};
 
 use crate::dispatcher::{Dispatcher, TrustLevel, TurnEvent, TurnRequest};
+use crate::health::ChannelState;
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -132,9 +133,17 @@ pub async fn serve(
                 username = %me.username(),
                 "Telegram bot connected"
             );
+            dispatcher
+                .health()
+                .set_channel("telegram", ChannelState::Connected, None);
         }
         Err(e) => {
             error!(%e, "failed to connect to Telegram API — check bot token");
+            // A failed getMe is a hard stop (almost always a bad token):
+            // teloxide's dispatcher never starts, so this surface is down.
+            dispatcher
+                .health()
+                .set_channel("telegram", ChannelState::Down, Some(e.to_string()));
             return;
         }
     }

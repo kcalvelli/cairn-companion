@@ -123,6 +123,32 @@ journalctl --user -u companion-core -f
 
 The daemon is the foundation for all Tier 1 features — channel adapters, CLI client, and TUI dashboard all connect through its dispatcher.
 
+### Health checks (`companion doctor`)
+
+`companion doctor` runs one battery of checks across every surface and prints a color-coded report — daemon liveness, session store, each enabled channel adapter, the gateway, every spoke in `spoke-servers.json`, the workspace, and persona-file resolution. It exits non-zero if anything is in a `FAIL` state, so it works in scripts and `ExecStartPost` hooks, not just as something a human reads.
+
+```bash
+companion doctor          # human-readable, color-coded
+companion doctor --json   # machine-readable; same exit-code contract
+```
+
+The daemon-independent checks (spokes, workspace, persona) run even when the daemon is down — which is exactly when you want them. A down daemon is the headline `FAIL`; the daemon-dependent checks (sessions, channels, gateway) report `SKIP` with the reason rather than masking the spoke/workspace/persona results behind one error.
+
+```
+✓ OK    daemon     companion-core v0.1.0, up 2h6m
+✓ OK    sessions   32 session(s), 32 active
+✓ OK    channels   2 enabled
+    ✓ OK    telegram   connected
+    ! WARN  email      reconnecting — connection refused
+✗ FAIL  spokes     1/8 spoke(s) unreachable
+    ✓ OK    companion-shell        http://localhost:18790/mcp (2ms)
+    ✗ FAIL  mini-companion-notify  http://mini…:18792/mcp: connection refused
+✓ OK    workspace  /home/keith/.local/share/cairn-companion/workspace
+✓ OK    persona    6 persona file(s) resolve
+```
+
+Status semantics: `OK` is healthy, `WARN` is degraded-but-recovering (a channel in backoff-retry), `FAIL` is a hard problem, `SKIP` is not-applicable (gateway disabled, daemon down). Only `FAIL` affects the exit code. `doctor` only ever reports — it never restarts, deletes, or repairs anything.
+
 ### OpenAI gateway
 
 When `gateway.openai.enable = true`, the daemon starts an OpenAI-compatible HTTP server alongside the D-Bus interface. This restores the voice integration that Home Assistant's Conversation integration depends on — HA points at the gateway's `/v1/chat/completions` endpoint and uses it as the LLM backend for Assist voice pipelines.
@@ -420,13 +446,21 @@ Each change is a self-contained proposal with `proposal.md`, `specs/` describing
 
 ## Development workflow
 
-This project follows spec-driven development via [OpenSpec](https://github.com/openspec-dev/openspec):
+This project follows spec-driven development via [OpenSpec](https://github.com/Fission-AI/OpenSpec):
 
 1. Changes start as proposals in `openspec/changes/<name>/proposal.md`
 2. Behavior is specified in `openspec/changes/<name>/specs/`
 3. Implementation steps are tracked in `openspec/changes/<name>/tasks.md`
 4. Only after proposal + specs + tasks are reviewed is any code written
 5. Completed changes are archived to `openspec/changes/archive/`
+
+**OpenSpec + AI coding assistants**
+
+- The `openspec` CLI is required: `npm install -g @fission-ai/openspec@latest`
+- Use `/opsx:propose`, `/opsx:explore`, `/opsx:apply`, `/opsx:archive` (or the full `/openspec-*` names) to drive the workflow from your assistant.
+- **Grok Build**: Native skills are provided in [`.grok/skills/`](.grok/skills/) (`/opsx-propose`, `/opsx-explore`, `/opsx-apply`, `/opsx-archive` and the `openspec-*` variants). These are discovered automatically when you run Grok Build inside the repo.
+- **Claude Code / compatibility**: Equivalent definitions live in `.claude/skills/` and `.claude/commands/opsx/`. Grok Build also reads these via its Claude compatibility layer (higher-priority `.grok/` wins when both exist).
+- Note: At the time of writing, the upstream `openspec init` command does not yet offer a "grok" / "grok-build" target. The files under `.grok/skills/` serve as the reference layout for what such support should generate.
 
 To work on this project:
 

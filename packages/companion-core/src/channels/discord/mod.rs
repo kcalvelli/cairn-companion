@@ -22,6 +22,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::channels::util::split_message;
 use crate::dispatcher::{Dispatcher, TrustLevel, TurnEvent, TurnRequest};
+use crate::health::ChannelState;
 
 use config::StreamMode;
 
@@ -49,6 +50,10 @@ impl EventHandler for Handler {
             guilds = ready.guilds.len(),
             "Discord gateway ready"
         );
+
+        self.dispatcher
+            .health()
+            .set_channel("discord", ChannelState::Connected, None);
 
         // Stash the bot's own user ID in the cache for loop prevention.
         // serenity's cache feature does this automatically on Ready.
@@ -384,6 +389,12 @@ pub async fn serve(
     let mut backoff = Duration::from_secs(1);
     let max_backoff = Duration::from_secs(60);
 
+    // Starting up — the Ready event handler flips this to Connected once
+    // the gateway handshake completes.
+    dispatcher
+        .health()
+        .set_channel("discord", ChannelState::Reconnecting, None);
+
     loop {
         let handler = Handler {
             dispatcher: dispatcher.clone(),
@@ -402,6 +413,11 @@ pub async fn serve(
             Ok(c) => c,
             Err(e) => {
                 error!(%e, ?backoff, "failed to build Discord client — retrying after backoff");
+                dispatcher.health().set_channel(
+                    "discord",
+                    ChannelState::Reconnecting,
+                    Some(e.to_string()),
+                );
                 tokio::select! {
                     biased;
                     _ = shutdown.notified() => {
@@ -435,6 +451,11 @@ pub async fn serve(
             }
             Err(e) => {
                 error!(%e, ?backoff, "Discord client error — reconnecting after backoff");
+                dispatcher.health().set_channel(
+                    "discord",
+                    ChannelState::Reconnecting,
+                    Some(e.to_string()),
+                );
                 tokio::select! {
                     biased;
                     _ = shutdown.notified() => {

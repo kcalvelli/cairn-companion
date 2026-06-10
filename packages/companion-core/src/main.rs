@@ -2,6 +2,7 @@ mod channels;
 mod dbus;
 mod dispatcher;
 mod gateway;
+mod health;
 mod model_config;
 mod store;
 
@@ -128,6 +129,11 @@ async fn main() {
             policy = ?config.session_policy,
             "starting OpenAI gateway"
         );
+        // Record gateway bind/port so `companion doctor` knows where to
+        // probe /health. The daemon reports config; the CLI does the probe.
+        dispatcher
+            .health()
+            .set_gateway(config.bind_address.clone(), config.port);
         let notify = shutdown_notify.clone();
         let gw_dispatcher = dispatcher.clone();
         Some(tokio::spawn(async move {

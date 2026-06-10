@@ -33,6 +33,7 @@ use xmpp_parsers::muc::muc::{History, Muc};
 use xmpp_parsers::presence::{Presence, Show as PresenceShow, Type as PresenceType};
 
 use crate::dispatcher::{Dispatcher, TrustLevel, TurnEvent, TurnRequest};
+use crate::health::ChannelState;
 
 use connector::{build_tls_config, Connector};
 
@@ -396,6 +397,12 @@ pub async fn serve(
         "XMPP adapter starting"
     );
 
+    // Health handle held outside the loop: the loop shadows `dispatcher`
+    // by moving a clone into run_session, so the match branches can't reach
+    // it. run_session flips this to Connected on the Online event.
+    let health = dispatcher.health();
+    health.set_channel("xmpp", ChannelState::Reconnecting, None);
+
     loop {
         let cfg = config.clone();
         let dispatcher = dispatcher.clone();
@@ -411,10 +418,16 @@ pub async fn serve(
                 match outcome {
                     Ok(()) => {
                         warn!("XMPP session ended cleanly — reconnecting");
+                        health.set_channel("xmpp", ChannelState::Reconnecting, None);
                         backoff = Duration::from_secs(1);
                     }
                     Err(e) => {
                         error!(%e, ?backoff, "XMPP session error — reconnecting after backoff");
+                        health.set_channel(
+                            "xmpp",
+                            ChannelState::Reconnecting,
+                            Some(e.to_string()),
+                        );
                         // Sleep with shutdown awareness so a stop signal
                         // doesn't have to wait the full backoff window.
                         tokio::select! {
@@ -506,6 +519,9 @@ async fn run_session(
                             info!(%bound_jid, "XMPP stream resumed");
                         } else {
                             info!(%bound_jid, "XMPP online");
+                            dispatcher
+                                .health()
+                                .set_channel("xmpp", ChannelState::Connected, None);
                             // Initial presence and MUC joins are sent
                             // inline rather than through the channel.
                             // We're already in the read loop with `&mut
@@ -527,6 +543,11 @@ async fn run_session(
                     }
                     Event::Disconnected(err) => {
                         warn!(%err, "XMPP disconnected");
+                        dispatcher.health().set_channel(
+                            "xmpp",
+                            ChannelState::Reconnecting,
+                            Some(err.to_string()),
+                        );
                         return Err(err);
                     }
                     Event::Stanza(stanza) => {

@@ -1,4 +1,5 @@
 mod dbus;
+mod doctor;
 
 use std::io::{self, BufRead, Write};
 use std::os::unix::process::CommandExt;
@@ -34,6 +35,12 @@ enum Command {
     Chat,
     /// Show daemon status
     Status,
+    /// Run health checks across every companion surface
+    Doctor {
+        /// Emit the report as JSON instead of the human-readable rendering
+        #[arg(long)]
+        json: bool,
+    },
     /// Manage sessions
     Sessions {
         #[command(subcommand)]
@@ -104,6 +111,7 @@ async fn main() {
     let exit_code = match cli.command {
         Some(Command::Chat) => cmd_chat().await,
         Some(Command::Status) => cmd_status().await,
+        Some(Command::Doctor { json }) => doctor::run(json).await,
         Some(Command::Sessions { action }) => match action {
             SessionAction::List => cmd_sessions_list().await,
             SessionAction::Show {

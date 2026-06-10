@@ -309,6 +309,27 @@ impl CompanionInterface {
         Ok(status)
     }
 
+    /// Return channel-adapter and gateway health for `companion doctor`.
+    ///
+    /// Distinct from `GetStatus` (scalar daemon counters consumed by
+    /// `companion status` and the TUI) on purpose — overloading that stable
+    /// map with nested per-channel state would muddy it. Returns a tuple of
+    /// `(channels, gateway_enabled, gateway_bind, gateway_port)` where
+    /// `channels` is `[(name, state, last_error)]` for every enabled adapter
+    /// (`state` ∈ connected/reconnecting/down; empty `last_error` means
+    /// none). When the gateway is disabled, `gateway_enabled` is false and
+    /// bind/port are empty/zero — the CLI does the actual `/health` probe.
+    async fn get_health(
+        &self,
+    ) -> zbus::fdo::Result<(Vec<(String, String, String)>, bool, String, u32)> {
+        let (channels, gateway) = self.dispatcher.health().snapshot();
+        let (enabled, bind, port) = match gateway {
+            Some((bind, port)) => (true, bind, port as u32),
+            None => (false, String::new(), 0),
+        };
+        Ok((channels, enabled, bind, port))
+    }
+
     /// Fetch one session's full details.
     ///
     /// Returns the full session row as a tuple — same shape as list_sessions'

@@ -37,6 +37,7 @@ use tokio::sync::Notify;
 use tracing::{debug, error, info, warn};
 
 use crate::dispatcher::{Dispatcher, TrustLevel, TurnEvent, TurnRequest};
+use crate::health::ChannelState;
 
 use self::parse::ParsedMessage;
 
@@ -61,6 +62,12 @@ pub async fn serve(dispatcher: Arc<Dispatcher>, config: EmailConfig, shutdown: A
         "email adapter starting"
     );
 
+    // Starting up — not yet connected. run_session flips this to Connected
+    // once IMAP auth succeeds.
+    dispatcher
+        .health()
+        .set_channel("email", ChannelState::Reconnecting, None);
+
     loop {
         let cfg = config.clone();
         let disp = dispatcher.clone();
@@ -78,10 +85,18 @@ pub async fn serve(dispatcher: Arc<Dispatcher>, config: EmailConfig, shutdown: A
                 match outcome {
                     Ok(()) => {
                         warn!("email session ended cleanly — reconnecting");
+                        dispatcher
+                            .health()
+                            .set_channel("email", ChannelState::Reconnecting, None);
                         backoff = Duration::from_secs(1);
                     }
                     Err(e) => {
                         error!(%e, ?backoff, "email session error — reconnecting after backoff");
+                        dispatcher.health().set_channel(
+                            "email",
+                            ChannelState::Reconnecting,
+                            Some(e.to_string()),
+                        );
                         tokio::select! {
                             _ = shutdown.notified() => {
                                 info!("email adapter shutting down during backoff");
@@ -107,6 +122,9 @@ async fn run_session(
 ) -> Result<(), EmailError> {
     let mut session = fetch::connect_and_login(&config).await?;
     info!(address = %config.address, "email IMAP authenticated");
+    dispatcher
+        .health()
+        .set_channel("email", ChannelState::Connected, None);
 
     loop {
         // Pull all currently-unseen messages, oldest first.

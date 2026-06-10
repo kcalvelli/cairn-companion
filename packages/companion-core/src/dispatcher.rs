@@ -10,6 +10,7 @@ use tokio::process::Command;
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tracing::{debug, error, info, warn};
 
+use crate::health::HealthRegistry;
 use crate::model_config::ModelConfig;
 use crate::store::SessionStore;
 
@@ -381,6 +382,10 @@ pub struct Dispatcher {
     /// held by value — env changes after startup have no effect until
     /// systemd restarts the unit.
     model_config: Arc<ModelConfig>,
+    /// Liveness mirror for channel adapters and the gateway. Adapters write
+    /// their connection state; the D-Bus `GetHealth` method reads it for
+    /// `companion doctor`. See [`crate::health`].
+    health: Arc<HealthRegistry>,
 }
 
 impl Dispatcher {
@@ -405,12 +410,19 @@ impl Dispatcher {
             anonymous_settings_json: Arc::from(anonymous_settings_json.as_str()),
             workspace_dir,
             model_config: Arc::new(model_config),
+            health: Arc::new(HealthRegistry::default()),
         }
     }
 
     /// Subscribe to the broadcast channel for all turn events.
     pub fn subscribe(&self) -> broadcast::Receiver<BroadcastEvent> {
         self.broadcast_tx.subscribe()
+    }
+
+    /// The shared health registry. Channel adapters write their connection
+    /// state into it; the D-Bus `GetHealth` method reads it.
+    pub fn health(&self) -> Arc<HealthRegistry> {
+        self.health.clone()
     }
 
     /// The workspace directory. Used by the D-Bus interface to resolve
@@ -457,6 +469,7 @@ impl Dispatcher {
             anonymous_settings_json: Arc::from(TEST_ANONYMOUS_SETTINGS_JSON),
             workspace_dir,
             model_config: Arc::new(model_config),
+            health: Arc::new(HealthRegistry::default()),
         }
     }
 
