@@ -10,12 +10,14 @@ Ordered by leverage, not effort. Top of the list pays for itself fastest.
 
 ---
 
-## 1. companion-doctor — _proposed + implemented_
+## 1. companion-doctor — ✅ SHIPPED 2026-06-10
 
-> Change `companion-doctor` is written and code-complete on this branch
-> (daemon `GetHealth` + channel health registry, `companion doctor`
-> CLI command with `--json`). Pending: deploy the new daemon via
-> `nixos-rebuild` to exercise the connected-channels path live.
+> Done and archived at
+> `openspec/changes/archive/2026-06-10-companion-doctor/`. Deployed and
+> verified live on edge + mini: `GetHealth` D-Bus method + channel
+> `HealthRegistry`, `companion doctor` with `--json`, session-scoped
+> spokes WARN instead of FAIL. The `diagnostics` capability is now a
+> baseline spec in `openspec/specs/`.
 
 **Tier:** 1 (CLI subcommand; probes Tier 2 surfaces when present)
 **Depends on:** daemon-core, cli-client. Spoke/gateway probes degrade
