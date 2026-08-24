@@ -175,6 +175,19 @@ impl SessionStore {
         Ok(())
     }
 
+    /// Drop the pinned claude_session_id, forcing the next turn to start a
+    /// fresh session. Used when a `--resume` target has been GC'd out from
+    /// under us (claude-code deletes idle session transcripts after
+    /// `cleanupPeriodDays`, default 30) — the pin outlives the transcript and
+    /// every resume attempt hard-fails until we let go of the dead id.
+    pub fn clear_claude_session_id(&self, id: i64) -> Result<(), StoreError> {
+        self.conn.execute(
+            "UPDATE sessions SET claude_session_id = NULL WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(())
+    }
+
     /// Update last_active_at to now.
     pub fn touch_session(&self, id: i64) -> Result<(), StoreError> {
         self.conn.execute(

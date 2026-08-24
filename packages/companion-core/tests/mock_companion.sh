@@ -34,6 +34,22 @@ case "$MODE" in
   crash)
     exit 1
     ;;
+  resume_aware)
+    # Simulate a GC'd --resume target. If the dispatcher asks us to resume a
+    # session, bail exactly like real claude-code does when the transcript is
+    # gone ("No conversation found") — non-zero exit, nothing on stdout. With
+    # no --resume, start a fresh session normally. Drives the stale-resume
+    # fallback test.
+    for a in "$@"; do
+      if [ "$a" = "--resume" ]; then
+        echo "No conversation found with session ID" >&2
+        exit 1
+      fi
+    done
+    echo '{"type":"system","subtype":"init","session_id":"'"$SESSION_ID"'","model":"claude-sonnet-4-20250514"}'
+    echo '{"type":"assistant","message":{"content":[{"text":"fresh start"}]}}'
+    echo '{"type":"result","subtype":"success","result":"fresh start"}'
+    ;;
   slow)
     echo '{"type":"system","subtype":"init","session_id":"'"$SESSION_ID"'","model":"claude-sonnet-4-20250514"}'
     echo '{"type":"assistant","message":{"content":[{"text":"thinking..."}]}}'

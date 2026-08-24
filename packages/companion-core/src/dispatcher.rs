@@ -582,6 +582,15 @@ impl Dispatcher {
         // array (system prompt, workspace dir, --mcp-config) and ends
         // with `exec claude "${args[@]}" "$@"`. Everything we append
         // here lands in `"$@"` and reaches claude unchanged.
+        // Resume-with-fallback (see the terminal wait handling at the bottom
+        // of this loop): start from the pinned session id, but be ready to
+        // drop it and retry with a fresh one if the transcript has been GC'd
+        // out from under us. `retried_after_stale_resume` caps that at exactly
+        // one extra attempt so a genuinely broken companion can't loop.
+        let mut resume_id = claude_session_id;
+        let mut retried_after_stale_resume = false;
+
+        loop {
         let mut cmd = Command::new(companion_cmd);
         cmd.current_dir(&workspace_dir);
         cmd.arg("--output-format")
@@ -634,8 +643,8 @@ impl Dispatcher {
             cmd.arg("--model").arg(model);
         }
 
-        if let Some(ref resume_id) = claude_session_id {
-            cmd.arg("--resume").arg(resume_id);
+        if let Some(ref rid) = resume_id {
+            cmd.arg("--resume").arg(rid);
         }
         cmd.arg("-p").arg("--").arg(&req.message_text);
 
@@ -651,7 +660,7 @@ impl Dispatcher {
             surface = %req.surface_id,
             conversation = %req.conversation_id,
             model = ?resolved_model,
-            resume = ?claude_session_id,
+            resume = ?resume_id,
             "spawning companion"
         );
 
@@ -670,6 +679,13 @@ impl Dispatcher {
 
         let mut full_response = String::new();
         let mut captured_session_id = false;
+        // Track whether claude got far enough to emit a session `init` and/or
+        // a clean `result`. Both stay false when a `--resume` target is
+        // missing — claude bails before either — which is the signal the
+        // terminal handler below uses to distinguish a recoverable stale
+        // resume from a genuine mid-turn failure.
+        let mut saw_init = false;
+        let mut saw_clean_result = false;
         // Set true once we've emitted a TextChunk from a `content_block_delta`
         // (i.e. partial-message streaming is working). Used to suppress the
         // legacy `assistant` event's text emission so the same response
@@ -706,9 +722,10 @@ impl Dispatcher {
 
             match (event.event_type.as_str(), event.subtype.as_deref()) {
                 ("system", Some("init")) => {
+                    saw_init = true;
                     if let Some(sid) = event.session_id {
                         debug!(session_id = %sid, "captured session id from init event");
-                        if claude_session_id.is_none() && !captured_session_id {
+                        if resume_id.is_none() && !captured_session_id {
                             let store = store.lock().await;
                             if let Err(e) = store.set_claude_session_id(session_id, &sid) {
                                 warn!(%e, "failed to store claude session id");
@@ -782,6 +799,7 @@ impl Dispatcher {
                     }
                 }
                 ("result", Some("success")) => {
+                    saw_clean_result = true;
                     let result_text = event.result.unwrap_or(full_response.clone());
                     let duration = start.elapsed();
                     info!(
@@ -794,6 +812,7 @@ impl Dispatcher {
                     break;
                 }
                 ("result", Some("error")) => {
+                    saw_clean_result = true;
                     let err_msg = event.error.unwrap_or_else(|| "unknown claude error".into());
                     error!(
                         surface = %req.surface_id,
@@ -814,8 +833,42 @@ impl Dispatcher {
             }
         }
 
-        // Wait for subprocess to exit.
-        match child.wait().await {
+        // Wait for the subprocess to exit, then decide whether this was a
+        // stale `--resume` we can silently recover from.
+        //
+        // A GC'd resume target makes claude print "No conversation found with
+        // session ID: <id>" to stderr and exit non-zero having emitted NOTHING
+        // on stdout — no init, no result. That exact shape is the only one we
+        // retry: drop the dead pin and run again with a fresh session, at most
+        // once. Every other failure (a real crash after init, a bad spawn, a
+        // clean `result/error`) surfaces to the caller unchanged.
+        let wait_result = child.wait().await;
+        let recoverable_stale_resume = resume_id.is_some()
+            && !retried_after_stale_resume
+            && !saw_init
+            && !saw_clean_result
+            && matches!(&wait_result, Ok(status) if !status.success());
+
+        if recoverable_stale_resume {
+            warn!(
+                surface = %req.surface_id,
+                conversation = %req.conversation_id,
+                stale = ?resume_id,
+                "resume target gone (session likely GC'd after cleanupPeriodDays); \
+                 dropping the pin and retrying with a fresh session"
+            );
+            {
+                let store = store.lock().await;
+                if let Err(e) = store.clear_claude_session_id(session_id) {
+                    warn!(%e, "failed to clear stale claude session id");
+                }
+            }
+            resume_id = None;
+            retried_after_stale_resume = true;
+            continue;
+        }
+
+        match wait_result {
             Ok(status) if !status.success() => {
                 let code = status.code().unwrap_or(-1);
                 let _ = emit(
@@ -833,6 +886,8 @@ impl Dispatcher {
             }
             _ => {}
         }
+        return;
+        } // end resume-with-fallback retry loop
     }
 }
 
@@ -935,6 +990,45 @@ mod tests {
 
         let has_complete = events.iter().any(|e| matches!(e, TurnEvent::Complete(_)));
         assert!(!has_complete, "should not have Complete on error");
+    }
+
+    #[tokio::test]
+    async fn stale_resume_target_is_dropped_and_retried_fresh() {
+        if !mock_available() { return; }
+        // The mock rejects any --resume (like claude-code with a GC'd
+        // transcript) but starts a fresh session cleanly when not resuming.
+        let dispatcher = mock_dispatcher_with("resume_aware", "fresh-session-999");
+
+        // Pre-seed a session pinned to a claude session id that no longer
+        // exists — exactly the state that bricked Telegram in the wild.
+        {
+            let store = dispatcher.store.lock().await;
+            let id = store.create_session("telegram", "chat-1").unwrap();
+            store.set_claude_session_id(id, "dead-session-000").unwrap();
+        }
+
+        let rx = dispatcher
+            .dispatch(make_request("telegram", "chat-1", "hi", TrustLevel::Owner))
+            .await;
+        let events = collect_events(rx).await;
+
+        // The fresh retry should complete — the dead resume must NOT surface
+        // as an error to the user.
+        let complete = events.iter().find_map(|e| match e {
+            TurnEvent::Complete(t) => Some(t.as_str()),
+            _ => None,
+        });
+        assert_eq!(complete, Some("fresh start"));
+        assert!(
+            !events.iter().any(|e| matches!(e, TurnEvent::Error(_))),
+            "stale resume should recover silently, got {events:?}"
+        );
+
+        // The dead pin must have been replaced by the fresh session id, so the
+        // next turn resumes the new session instead of re-failing.
+        let store = dispatcher.store.lock().await;
+        let session = store.lookup_session("telegram", "chat-1").unwrap().unwrap();
+        assert_eq!(session.claude_session_id.as_deref(), Some("fresh-session-999"));
     }
 
     #[tokio::test]
