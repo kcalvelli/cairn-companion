@@ -8,6 +8,7 @@
   rustPlatform,
   pkg-config,
   dbus,
+  sqlite,
 }:
 rustPlatform.buildRustPackage {
   pname = "companion-core";
@@ -18,7 +19,10 @@ rustPlatform.buildRustPackage {
   cargoLock.lockFile = ./Cargo.lock;
 
   nativeBuildInputs = [ pkg-config ];
-  buildInputs = [ dbus ];
+  buildInputs = [
+    dbus
+    sqlite
+  ];
 
   meta = {
     description = "cairn-companion daemon — persistent session manager and D-Bus control plane";
